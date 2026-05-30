@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: science-lab-safety
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true
+      - key: TEACHER_KEY
+        value: teacher1234
+      - key: STUDENT_PASSWORD
+        value: student1234
