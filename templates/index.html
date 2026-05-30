@@ -12,15 +12,15 @@
     <template id="homeTemplate">
       <section class="hero dark-hero">
         <div>
-          <p class="pill">AI · Digital Safety Project</p>
+          <p class="pill">AI · Science Lab Platform</p>
           <h1>시약장을 부탁해</h1>
-          <p class="credits">제작자 민혜주 · 황예음 · 강규빈</p>
-          <p class="lead">학생은 과학실 사용 신청과 실험 계획서를 제출하고, 선생님은 승인과 시약 관리를 수행합니다.</p>
+          <p class="credits">제작: 강규빈 · 민혜주 · 황예음</p>
+          <p class="lead">천진한국국제학교 선생님들과 학생들이 과학실을 보다 효율적이고 편하게 사용할 수 있도록 제작한 AI 기반 플랫폼입니다.</p>
         </div>
         <div class="stat-grid">
           <article><span id="statReagents">0</span><p>등록 시약</p></article>
-          <article><span id="statDanger">0</span><p>위험 시약</p></article>
-          <article><span id="statExpiry">0</span><p>만료 임박</p></article>
+          <article><span id="statDanger">0</span><p>주의 시약</p></article>
+          <article><span id="statCheck">0</span><p>점검 임박/경과</p></article>
           <article><span id="statPending">0</span><p>승인 대기</p></article>
         </div>
       </section>
@@ -28,7 +28,7 @@
       <section class="app-shell">
         <section class="panel">
           <h2>사용자 역할 선택</h2>
-          <p class="muted">학생은 검색과 신청을, 선생님은 시약 관리와 신청 승인을 할 수 있습니다.</p>
+          <p class="muted">학생은 시약 검색과 과학실 사용 신청을, 선생님은 시약 관리와 신청 승인을 할 수 있습니다.</p>
           <div class="role-grid">
             <button class="role-card" id="studentModeButton" type="button">
               <strong>학생으로 시작</strong>
@@ -73,19 +73,6 @@
         <button class="ghost light" id="logoutButton" type="button">처음 화면으로</button>
       </section>
       <section class="app-shell dashboard-grid" id="dashboardBody"></section>
-    </template>
-
-    <template id="searchPanelTemplate">
-      <section class="panel">
-        <div class="panel-heading">
-          <div>
-            <p class="eyebrow">Search</p>
-            <h2>시약 검색</h2>
-          </div>
-        </div>
-        <input id="searchInput" type="search" placeholder="시약명, 위치, 코드, 담당자 검색" />
-        <div class="reagent-list" id="reagentList"></div>
-      </section>
     </template>
 
     <script src="{{ url_for('static', filename='app.js') }}"></script>

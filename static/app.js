@@ -1,16 +1,16 @@
 const app = document.querySelector("#app");
 
 const reagentRules = {
-  "염산": { formula: "HCl", category: "산", risk: "부식성", storage: "산 전용 보관함", warning: "염기성 물질과 분리 보관이 필요합니다." },
-  "황산": { formula: "H2SO4", category: "산", risk: "강한 부식성", storage: "산 전용 보관함", warning: "물과 반응 시 발열할 수 있으므로 취급에 주의합니다." },
-  "질산": { formula: "HNO3", category: "산화성 산", risk: "부식성 · 산화성", storage: "산화성 물질 전용 보관함", warning: "유기물, 환원제와 분리 보관합니다." },
-  "수산화나트륨": { formula: "NaOH", category: "염기", risk: "부식성", storage: "염기 전용 보관함", warning: "산성 물질과 분리 보관합니다." },
-  "암모니아수": { formula: "NH4OH", category: "염기", risk: "자극성", storage: "염기 전용 보관함", warning: "휘발성 냄새가 강하므로 환기가 필요합니다." },
-  "에탄올": { formula: "C2H5OH", category: "유기용매", risk: "인화성", storage: "인화성 물질 보관함", warning: "화기 근처 보관을 피합니다." },
-  "메탄올": { formula: "CH3OH", category: "유기용매", risk: "인화성 · 유해성", storage: "인화성 물질 보관함", warning: "흡입과 피부 접촉을 피하고 밀폐 보관합니다." },
-  "아세톤": { formula: "C3H6O", category: "유기용매", risk: "높은 인화성", storage: "인화성 물질 보관함", warning: "증기가 쉽게 발생하므로 뚜껑을 닫아 보관합니다." },
-  "과산화수소": { formula: "H2O2", category: "산화제", risk: "산화성", storage: "산화제 전용 보관함", warning: "환원제, 금속분말, 유기물과 분리 보관합니다." },
-  "질산칼륨": { formula: "KNO3", category: "산화제", risk: "산화성", storage: "산화제 전용 보관함", warning: "가연성 물질과 함께 보관하지 않습니다." },
+  "염산": { formula: "HCl", category: "산", risk: "부식성", storage: "산 전용 보관함", months: 24, warning: "염기성 물질과 분리 보관이 필요합니다." },
+  "황산": { formula: "H2SO4", category: "산", risk: "강한 부식성", storage: "산 전용 보관함", months: 36, warning: "물과 반응 시 발열할 수 있으므로 취급에 주의합니다." },
+  "질산": { formula: "HNO3", category: "산화성 산", risk: "부식성 · 산화성", storage: "산화성 물질 전용 보관함", months: 18, warning: "유기물, 환원제와 분리 보관합니다." },
+  "수산화나트륨": { formula: "NaOH", category: "염기", risk: "부식성", storage: "염기 전용 보관함", months: 36, warning: "산성 물질과 분리 보관합니다." },
+  "암모니아수": { formula: "NH4OH", category: "염기", risk: "자극성", storage: "염기 전용 보관함", months: 12, warning: "휘발성 냄새가 강하므로 환기가 필요합니다." },
+  "에탄올": { formula: "C2H5OH", category: "유기용매", risk: "인화성", storage: "인화성 물질 보관함", months: 12, warning: "화기 근처 보관을 피합니다." },
+  "메탄올": { formula: "CH3OH", category: "유기용매", risk: "인화성 · 유해성", storage: "인화성 물질 보관함", months: 12, warning: "흡입과 피부 접촉을 피하고 밀폐 보관합니다." },
+  "아세톤": { formula: "C3H6O", category: "유기용매", risk: "높은 인화성", storage: "인화성 물질 보관함", months: 12, warning: "증기가 쉽게 발생하므로 뚜껑을 닫아 보관합니다." },
+  "과산화수소": { formula: "H2O2", category: "산화제", risk: "산화성", storage: "산화제 전용 보관함", months: 12, warning: "환원제, 금속분말, 유기물과 분리 보관합니다." },
+  "질산칼륨": { formula: "KNO3", category: "산화제", risk: "산화성", storage: "산화제 전용 보관함", months: 36, warning: "가연성 물질과 함께 보관하지 않습니다." },
 };
 
 const state = {
@@ -40,16 +40,31 @@ function getTodayStart() {
   return today;
 }
 
-function daysUntil(dateString) {
-  if (!dateString) return 9999;
-  const target = new Date(`${dateString}T00:00:00`);
-  return Math.ceil((target - getTodayStart()) / (1000 * 60 * 60 * 24));
-}
-
 function getMinimumDate() {
   const min = getTodayStart();
   min.setDate(min.getDate() + 3);
   return min.toISOString().slice(0, 10);
+}
+
+function daysUntil(dateString) {
+  if (!dateString) return null;
+  const target = new Date(`${dateString}T00:00:00`);
+  return Math.ceil((target - getTodayStart()) / (1000 * 60 * 60 * 24));
+}
+
+function addMonths(dateString, months) {
+  if (!dateString || !months) return "";
+  const date = new Date(`${dateString}T00:00:00`);
+  date.setMonth(date.getMonth() + Number(months));
+  return date.toISOString().slice(0, 10);
+}
+
+function estimateShelfLifeByAI(name) {
+  const info = analyzeReagent(name);
+  if (info.category.includes("산화제")) return "12개월 권장";
+  if (info.category.includes("유기용매")) return "24개월 권장";
+  if (info.category.includes("산") || info.category.includes("염기")) return "장기 보관 가능, 정기 상태 점검 권장";
+  return "시약 라벨 또는 SDS 확인 필요";
 }
 
 function analyzeReagent(name) {
@@ -61,6 +76,7 @@ function analyzeReagent(name) {
       risk: "추가 확인 필요",
       riskLevel: "판단 보류",
       storage: "담당 교사 확인 후 지정",
+      months: 12,
       protectiveGear: "보안경, 장갑 착용 권장",
       disposal: "SDS 확인 후 폐기",
       incompatible: "정보 부족",
@@ -74,7 +90,7 @@ function analyzeReagent(name) {
   let protectiveGear = "보안경, 실험복 착용";
   let disposal = "소량은 담당 교사 지시에 따라 분리 폐기";
   let incompatible = "일반 시약과 분리 여부 확인";
-  let aiSummary = "AI가 시약명을 분석하여 기본 위험성과 보관 조건을 자동 분류했습니다.";
+  let aiSummary = "AI가 시약명을 분석하여 기본 위험성과 보관 조건, 권장 사용기간을 자동 분류했습니다.";
 
   if (data.risk.includes("강한") || data.risk.includes("높은") || data.risk.includes("산화성")) riskLevel = "높음";
   else if (data.risk.includes("부식") || data.risk.includes("인화") || data.risk.includes("유해")) riskLevel = "중간";
@@ -105,6 +121,41 @@ function analyzeReagent(name) {
   }
 
   return { ...data, riskLevel, protectiveGear, disposal, incompatible, aiSummary };
+}
+
+function getUsePeriodInfo(item) {
+  const info = analyzeReagent(item.name);
+  const months = item.recommended_months;
+  if (!months) {
+    return {
+      months: "",
+      source: "AI 판단",
+      dueDate: "미입력",
+      remaining: null,
+      status: "상태 점검 권장",
+      detail: estimateShelfLifeByAI(item.name),
+    };
+  }
+
+  const source = "제조사 표기";
+  const dueDate = addMonths(item.purchase_date, months);
+  const remaining = daysUntil(dueDate);
+
+  let status = "상태 점검 권장";
+  if (!dueDate) status = "상태 점검 권장";
+  else if (remaining < 0) status = "권장 사용기한 경과";
+  else if (remaining <= 30) status = "점검 임박";
+  else status = "정상";
+
+  const detail = status === "정상"
+    ? "권장 사용기한 내 보관 중"
+    : status === "점검 임박"
+      ? "30일 이내 권장 사용기한 도달"
+      : status === "권장 사용기한 경과"
+        ? "시약 상태 확인 또는 교체 검토 필요"
+        : estimateShelfLifeByAI(item.name);
+
+  return { months, source, dueDate: dueDate || "미입력", remaining, status, detail };
 }
 
 function analyzeExperimentPlan(reagentsText, safetyPlan) {
@@ -145,8 +196,11 @@ function dangerCount() {
   }).length;
 }
 
-function expiringSoonCount() {
-  return state.reagents.filter((item) => daysUntil(item.expiry) <= 30).length;
+function checkNeededCount() {
+  return state.reagents.filter((item) => {
+    const status = getUsePeriodInfo(item).status;
+    return status === "권장 사용기한 경과" || status === "점검 임박";
+  }).length;
 }
 
 function pendingCount() {
@@ -159,7 +213,7 @@ function renderHome() {
 
   document.querySelector("#statReagents").textContent = state.reagents.length;
   document.querySelector("#statDanger").textContent = dangerCount();
-  document.querySelector("#statExpiry").textContent = expiringSoonCount();
+  document.querySelector("#statCheck").textContent = checkNeededCount();
   document.querySelector("#statPending").textContent = pendingCount();
 
   document.querySelector("#studentModeButton").addEventListener("click", () => {
@@ -173,11 +227,10 @@ function renderHome() {
 
   document.querySelector("#studentLoginForm").addEventListener("submit", async (event) => {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
     try {
       await requestJson("/api/login/student", {
         method: "POST",
-        body: JSON.stringify(Object.fromEntries(form)),
+        body: JSON.stringify(Object.fromEntries(new FormData(event.currentTarget))),
       });
       await refresh();
     } catch (error) {
@@ -187,11 +240,10 @@ function renderHome() {
 
   document.querySelector("#teacherLoginForm").addEventListener("submit", async (event) => {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
     try {
       await requestJson("/api/login/teacher", {
         method: "POST",
-        body: JSON.stringify(Object.fromEntries(form)),
+        body: JSON.stringify(Object.fromEntries(new FormData(event.currentTarget))),
       });
       await refresh();
     } catch (error) {
@@ -286,7 +338,8 @@ function renderTeacherDashboard() {
         <label>위험성<textarea name="risk_notes" placeholder="예: 부식성, 인화성, 흡입 주의"></textarea></label>
         <label>용량<input name="quantity" placeholder="예: 450 mL" /></label>
         <label>보관 위치<input name="location" placeholder="예: A-1" required /></label>
-        <label>유효기간<input name="expiry" type="date" /></label>
+        <label>구매일/등록일<input name="purchase_date" type="date" /></label>
+        <label>제조사 권장 사용기간(개월)<input name="recommended_months" type="number" min="1" placeholder="선택 입력: 예 12" /></label>
         <label>담당자<input name="manager" placeholder="예: 과학부" /></label>
         <div class="analysis-box" id="reagentAnalysis" hidden></div>
         <button type="submit" id="saveReagentButton">시약 추가하기</button>
@@ -310,7 +363,7 @@ function renderTeacherDashboard() {
     }
     const info = analyzeReagent(reagentForm.name.value);
     box.hidden = false;
-    box.innerHTML = `<strong>AI 분석 결과</strong><p>위험성: ${info.risk}</p><p>AI 위험도: ${info.riskLevel}</p><p>권장 보관 위치: ${info.storage}</p><p>주의: ${info.warning}</p>`;
+    box.innerHTML = `<strong>AI 분석 결과</strong><p>위험성: ${info.risk}</p><p>AI 위험도: ${info.riskLevel}</p><p>AI 사용기간 판단: ${estimateShelfLifeByAI(reagentForm.name.value)}</p><p>권장 보관 위치: ${info.storage}</p><p>주의: ${info.warning}</p>`;
   });
   reagentForm.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -331,7 +384,7 @@ function renderTeacherDashboard() {
 function renderSearchPanel(container, isTeacher) {
   container.innerHTML = `
     <div class="panel-heading"><div><p class="eyebrow">Search</p><h2>${isTeacher ? "시약 목록 관리" : "시약 검색"}</h2></div></div>
-    <input id="searchInput" type="search" placeholder="시약명 또는 위치 검색" value="${state.query}" />
+    <input id="searchInput" type="search" placeholder="시약명, 위치, 코드, 담당자 검색" value="${state.query}" />
     <div class="reagent-list" id="reagentList"></div>
   `;
   container.querySelector("#searchInput").addEventListener("input", async (event) => {
@@ -364,8 +417,9 @@ function renderReagentList(container, isTeacher) {
 
 function reagentCardHtml(item, isTeacher) {
   const info = analyzeReagent(item.name);
-  const days = daysUntil(item.expiry);
-  const status = days < 0 ? "유효기간 경과" : days <= 30 ? "만료 임박" : "정상";
+  const period = getUsePeriodInfo(item);
+  const dueLabel = period.dueDate || "구매일/등록일 입력 필요";
+  const usePeriodLabel = period.months ? `${period.source} · ${period.months}개월` : period.detail;
   return `
     <article class="reagent-card">
       <div class="card-head">
@@ -377,14 +431,19 @@ function reagentCardHtml(item, isTeacher) {
       </div>
       <p class="muted">현재량 ${item.quantity || "미입력"} · 담당 ${item.manager || "미지정"} · 위치 ${item.location}</p>
       <div class="mini-grid">
+        <div><small>구매일/등록일</small><strong>${item.purchase_date || "미입력"}</strong></div>
+        <div><small>AI 권장 사용기한</small><strong>${dueLabel}<br>${usePeriodLabel}</strong></div>
+        <div><small>점검 상태</small><strong>${period.status}</strong></div>
+      </div>
+      <div class="mini-grid">
         <div><small>위험성</small><strong>${item.risk_notes || info.risk}</strong></div>
         <div><small>권장 위치</small><strong>${info.storage}</strong></div>
-        <div><small>유효기간</small><strong>${item.expiry || "미입력"} (${status})</strong></div>
+        <div><small>권장 보호구</small><strong>${info.protectiveGear}</strong></div>
       </div>
       <div class="analysis-box">
         <p>함께 보관하면 위험한 물질: ${info.incompatible}</p>
-        <p>권장 보호구: ${info.protectiveGear}</p>
         <p>폐기 방법: ${info.disposal}</p>
+        <p>사용기간 판단: ${period.detail}</p>
         <p>AI 요약: ${info.aiSummary}</p>
       </div>
       ${isTeacher ? `<div class="button-row"><button data-edit="${item.id}" type="button">수정</button><button class="danger" data-delete="${item.id}" type="button">삭제</button></div>` : ""}

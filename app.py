@@ -24,7 +24,8 @@ REAGENT_FIELDS = [
     "risk_notes",
     "quantity",
     "location",
-    "expiry",
+    "purchase_date",
+    "recommended_months",
     "manager",
     "created_at",
 ]
@@ -73,7 +74,8 @@ def init_db() -> None:
         ensure_column(conn, "reagents", "chemical_code", "TEXT DEFAULT ''")
         ensure_column(conn, "reagents", "hazard_level", "TEXT DEFAULT ''")
         ensure_column(conn, "reagents", "risk_notes", "TEXT DEFAULT ''")
-        ensure_column(conn, "reagents", "expiry", "TEXT DEFAULT ''")
+        ensure_column(conn, "reagents", "purchase_date", "TEXT DEFAULT ''")
+        ensure_column(conn, "reagents", "recommended_months", "INTEGER DEFAULT NULL")
         ensure_column(conn, "reagents", "manager", "TEXT DEFAULT ''")
 
         conn.execute(
@@ -99,14 +101,14 @@ def init_db() -> None:
             conn.executemany(
                 """
                 INSERT INTO reagents
-                    (name, english_name, chemical_code, hazard_level, risk_notes, quantity, location, expiry, manager)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (name, english_name, chemical_code, hazard_level, risk_notes, quantity, location, purchase_date, recommended_months, manager)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 [
-                    ("염산", "Hydrochloric acid", "HCl", "위험", "부식성. 염기성 물질과 분리 보관", "450 mL", "A-1", "2026-12-31", "과학부"),
-                    ("에탄올", "Ethanol", "C2H5OH", "높음", "인화성. 화기 근처 보관 금지", "700 mL", "B-2", "2026-06-20", "화학실"),
-                    ("수산화나트륨", "Sodium hydroxide", "NaOH", "위험", "강한 염기성. 피부와 눈 접촉 주의", "120 g", "C-1", "2025-12-15", "과학부"),
-                    ("과산화수소", "Hydrogen peroxide", "H2O2", "높음", "산화성. 환원제와 분리 보관", "300 mL", "D-1", "2026-08-10", "화학실"),
+                    ("염산", "Hydrochloric acid", "HCl", "위험", "부식성. 염기성 물질과 분리 보관", "450 mL", "A-1", "2026-03-01", None, "과학부"),
+                    ("에탄올", "Ethanol", "C2H5OH", "높음", "인화성. 화기 근처 보관 금지", "700 mL", "B-2", "2026-05-10", 12, "화학실"),
+                    ("수산화나트륨", "Sodium hydroxide", "NaOH", "위험", "강한 염기성. 피부와 눈 접촉 주의", "120 g", "C-1", "2026-01-12", None, "과학부"),
+                    ("과산화수소", "Hydrogen peroxide", "H2O2", "높음", "산화성. 환원제와 분리 보관", "300 mL", "D-1", "2026-04-20", 12, "화학실"),
                 ],
             )
 
@@ -152,12 +154,7 @@ def index():
 
 @app.get("/api/session")
 def session_status():
-    return jsonify(
-        {
-            "role": role(),
-            "student": session.get("student"),
-        }
-    )
+    return jsonify({"role": role(), "student": session.get("student")})
 
 
 @app.post("/api/login/student")
@@ -213,7 +210,7 @@ def list_reagents():
                    OR risk_notes LIKE ?
                    OR quantity LIKE ?
                    OR location LIKE ?
-                   OR expiry LIKE ?
+                   OR purchase_date LIKE ?
                    OR manager LIKE ?
                 ORDER BY id DESC
                 """,
@@ -231,8 +228,7 @@ def create_reagent():
     if blocked:
         return blocked
 
-    data = request.get_json(silent=True) or {}
-    values = normalize_reagent_payload(data)
+    values = normalize_reagent_payload(request.get_json(silent=True) or {})
     if not values["name"] or not values["location"]:
         return jsonify({"message": "시약명과 보관 위치는 필수입니다."}), 400
 
@@ -240,9 +236,9 @@ def create_reagent():
         cursor = conn.execute(
             """
             INSERT INTO reagents
-                (name, english_name, chemical_code, hazard_level, risk_notes, quantity, location, expiry, manager)
+                (name, english_name, chemical_code, hazard_level, risk_notes, quantity, location, purchase_date, recommended_months, manager)
             VALUES
-                (:name, :english_name, :chemical_code, :hazard_level, :risk_notes, :quantity, :location, :expiry, :manager)
+                (:name, :english_name, :chemical_code, :hazard_level, :risk_notes, :quantity, :location, :purchase_date, :recommended_months, :manager)
             """,
             values,
         )
@@ -260,8 +256,7 @@ def update_reagent(reagent_id: int):
     if blocked:
         return blocked
 
-    data = request.get_json(silent=True) or {}
-    values = normalize_reagent_payload(data)
+    values = normalize_reagent_payload(request.get_json(silent=True) or {})
     values["id"] = reagent_id
     if not values["name"] or not values["location"]:
         return jsonify({"message": "시약명과 보관 위치는 필수입니다."}), 400
@@ -277,7 +272,8 @@ def update_reagent(reagent_id: int):
                 risk_notes = :risk_notes,
                 quantity = :quantity,
                 location = :location,
-                expiry = :expiry,
+                purchase_date = :purchase_date,
+                recommended_months = :recommended_months,
                 manager = :manager
             WHERE id = :id
             """,
@@ -320,10 +316,7 @@ def list_requests():
         params = (student.get("student_id", ""),)
 
     with get_db() as conn:
-        rows = conn.execute(
-            f"SELECT {fields} FROM lab_requests {where} ORDER BY id DESC",
-            params,
-        ).fetchall()
+        rows = conn.execute(f"SELECT {fields} FROM lab_requests {where} ORDER BY id DESC", params).fetchall()
 
     return jsonify([row_dict(row, REQUEST_FIELDS) for row in rows])
 
@@ -373,16 +366,12 @@ def update_request_status(request_id: int):
     if blocked:
         return blocked
 
-    data = request.get_json(silent=True) or {}
-    status = data.get("status", "").strip()
+    status = (request.get_json(silent=True) or {}).get("status", "").strip()
     if status not in {"대기", "승인", "반려"}:
         return jsonify({"message": "상태 값이 올바르지 않습니다."}), 400
 
     with get_db() as conn:
-        cursor = conn.execute(
-            "UPDATE lab_requests SET status = ? WHERE id = ?",
-            (status, request_id),
-        )
+        cursor = conn.execute("UPDATE lab_requests SET status = ? WHERE id = ?", (status, request_id))
         if cursor.rowcount == 0:
             return jsonify({"message": "해당 신청서를 찾을 수 없습니다."}), 404
         row = conn.execute(
@@ -394,6 +383,12 @@ def update_request_status(request_id: int):
 
 
 def normalize_reagent_payload(data: dict) -> dict:
+    months = data.get("recommended_months")
+    try:
+        months_value = int(months) if str(months).strip() else None
+    except (TypeError, ValueError):
+        months_value = None
+
     return {
         "name": data.get("name", "").strip(),
         "english_name": data.get("english_name", "").strip(),
@@ -402,7 +397,8 @@ def normalize_reagent_payload(data: dict) -> dict:
         "risk_notes": data.get("risk_notes", "").strip(),
         "quantity": data.get("quantity", "").strip(),
         "location": data.get("location", "").strip(),
-        "expiry": data.get("expiry", "").strip(),
+        "purchase_date": data.get("purchase_date", "").strip(),
+        "recommended_months": months_value,
         "manager": data.get("manager", "").strip() or "미지정",
     }
 
