@@ -20,6 +20,7 @@ const state = {
   requests: [],
   query: "",
   editingId: null,
+  teacherSection: null,
 };
 
 async function requestJson(url, options = {}) {
@@ -264,10 +265,12 @@ function renderDashboard() {
   document.querySelector("#logoutButton").addEventListener("click", async () => {
     await requestJson("/api/logout", { method: "POST" });
     state.query = "";
+    state.teacherSection = null;
     await refresh();
   });
 
   if (isStudent) renderStudentDashboard();
+  else if (!state.teacherSection) renderTeacherSectionPicker();
   else renderTeacherDashboard();
 }
 
@@ -326,8 +329,53 @@ function renderStudentDashboard() {
 
 function renderTeacherDashboard() {
   const body = document.querySelector("#dashboardBody");
+  if (state.teacherSection === "reagents") renderTeacherReagentManager(body);
+  if (state.teacherSection === "requests") renderTeacherRequestManager(body);
+}
+
+function renderTeacherSectionPicker() {
+  const body = document.querySelector("#dashboardBody");
+  const waiting = state.requests.filter((item) => item.status === "대기").length;
+  body.className = "app-shell dashboard-grid";
+  body.innerHTML = `
+    <section class="panel">
+      <h2>선생님 작업 선택</h2>
+      <p class="muted">시약 관리와 학생 신청 확인을 분리해서 볼 수 있습니다.</p>
+      ${waiting ? `<div class="notice-banner"><strong>새로 확인할 신청서 ${waiting}건</strong><span>대기 중인 과학실 사용 신청이 있습니다.</span></div>` : ""}
+      <div class="role-grid">
+        <button class="role-card" id="openReagentsButton" type="button">
+          <strong>시약 등록·목록 관리</strong>
+          <span>시약 추가, 수정, 삭제와 검색을 한 화면에서 처리합니다.</span>
+        </button>
+        <button class="role-card highlight" id="openRequestsButton" type="button">
+          <strong>학생 신청서 확인</strong>
+          <span>대기·승인·반려 신청서를 따로 보고 처리합니다.</span>
+          ${waiting ? `<em>${waiting}건 대기 중</em>` : ""}
+        </button>
+      </div>
+    </section>
+  `;
+
+  document.querySelector("#openReagentsButton").addEventListener("click", async () => {
+    state.teacherSection = "reagents";
+    await refresh();
+  });
+  document.querySelector("#openRequestsButton").addEventListener("click", async () => {
+    state.teacherSection = "requests";
+    await refresh();
+  });
+}
+
+function renderTeacherReagentManager(body) {
   body.className = "app-shell dashboard-grid teacher-grid";
   body.innerHTML = `
+    <section class="panel teacher-toolbar full-span">
+      <div>
+        <p class="eyebrow">Teacher</p>
+        <h2>시약 등록·목록 관리</h2>
+      </div>
+      <button class="secondary" id="backToTeacherMenu" type="button">선생님 메뉴로</button>
+    </section>
     <section class="panel">
       <div class="panel-heading"><div><p class="eyebrow">Admin</p><h2>시약 등록 및 수정</h2></div></div>
       <form id="reagentForm" class="stack-form">
@@ -346,13 +394,12 @@ function renderTeacherDashboard() {
       </form>
     </section>
     <section class="panel" id="teacherSearchPanel"></section>
-    <section class="panel full-span">
-      <div class="panel-heading"><div><p class="eyebrow">Review</p><h2>학생 과학실 사용 신청 확인</h2></div></div>
-      <div id="requestList"></div>
-    </section>
   `;
+  document.querySelector("#backToTeacherMenu").addEventListener("click", async () => {
+    state.teacherSection = null;
+    await refresh();
+  });
   renderSearchPanel(document.querySelector("#teacherSearchPanel"), true);
-  renderRequestList(true);
 
   const reagentForm = document.querySelector("#reagentForm");
   reagentForm.name.addEventListener("input", () => {
@@ -379,6 +426,30 @@ function renderTeacherDashboard() {
       alert(error.message);
     }
   });
+}
+
+function renderTeacherRequestManager(body) {
+  const waiting = state.requests.filter((item) => item.status === "대기").length;
+  body.className = "app-shell dashboard-grid";
+  body.innerHTML = `
+    <section class="panel teacher-toolbar">
+      <div>
+        <p class="eyebrow">Review</p>
+        <h2>학생 과학실 사용 신청 확인</h2>
+        <p class="muted">새 신청은 대기 중인 신청 칸에 먼저 표시됩니다.</p>
+      </div>
+      <button class="secondary" id="backToTeacherMenu" type="button">선생님 메뉴로</button>
+    </section>
+    ${waiting ? `<section class="notice-banner full-width"><strong>새로 올라온 신청서 ${waiting}건</strong><span>대기 중인 신청서를 확인하고 승인 또는 반려하세요.</span></section>` : ""}
+    <section class="panel full-width">
+      <div id="requestList"></div>
+    </section>
+  `;
+  document.querySelector("#backToTeacherMenu").addEventListener("click", async () => {
+    state.teacherSection = null;
+    await refresh();
+  });
+  renderRequestList(true);
 }
 
 function renderSearchPanel(container, isTeacher) {
@@ -469,27 +540,55 @@ function renderRequestList(isTeacher) {
     container.innerHTML = `<p class="empty">신청 내역이 없습니다.</p>`;
     return;
   }
-  container.innerHTML = state.requests.map((item) => requestCardHtml(item, isTeacher)).join("");
-  if (!isTeacher) return;
 
-  container.querySelectorAll("[data-status]").forEach((button) => {
-    button.addEventListener("click", async () => {
-      await requestJson(`/api/requests/${button.dataset.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ status: button.dataset.status }),
+  if (isTeacher) {
+    const groups = [
+      { status: "대기", title: "대기 중인 신청", description: "검토가 필요한 신청서입니다." },
+      { status: "승인", title: "승인된 신청", description: "승인 처리된 신청서입니다." },
+      { status: "반려", title: "반려된 신청", description: "반려 처리된 신청서입니다." },
+    ];
+
+    container.innerHTML = groups.map((group) => {
+      const items = state.requests.filter((item) => item.status === group.status);
+      return `
+        <section class="request-column" data-request-group="${group.status}">
+          <div class="request-column-head">
+            <div>
+              <h3>${group.title}</h3>
+              <p>${group.description}</p>
+            </div>
+            <span>${items.length}건</span>
+          </div>
+          <div class="request-stack">
+            ${items.length ? items.map((item) => requestCardHtml(item, true)).join("") : `<p class="empty compact">해당 신청이 없습니다.</p>`}
+          </div>
+        </section>
+      `;
+    }).join("");
+
+    container.querySelectorAll("[data-status]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        await requestJson(`/api/requests/${button.dataset.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ status: button.dataset.status }),
+        });
+        await refresh();
       });
-      await refresh();
     });
-  });
+    return;
+  }
+
+  container.innerHTML = state.requests.map((item) => requestCardHtml(item, isTeacher)).join("");
 }
 
 function requestCardHtml(item, isTeacher) {
   const analysis = analyzeExperimentPlan(item.reagents, item.safety_plan);
+  const isNew = isTeacher && item.status === "대기";
   return `
-    <article class="request-card">
+    <article class="request-card ${isNew ? "new-request" : ""}">
       <div class="card-head">
         <div>
-          <h3>${item.experiment_title}</h3>
+          <h3>${item.experiment_title} ${isNew ? `<span class="new-label">새 신청</span>` : ""}</h3>
           <p class="muted">${item.student_name} (${item.student_id}) · ${item.lab_date} ${item.lab_time}</p>
         </div>
         <span class="status-badge" data-status="${item.status}">${item.status}</span>
@@ -503,9 +602,17 @@ function requestCardHtml(item, isTeacher) {
         <p><strong>안전 계획:</strong> ${item.safety_plan}</p>
         <p>AI 계획서 분석: ${analysis.summary} / 인식된 시약: ${analysis.detected}</p>
       </div>
-      ${isTeacher ? `<div class="button-row"><button data-id="${item.id}" data-status="승인" type="button">승인</button><button class="danger" data-id="${item.id}" data-status="반려" type="button">반려</button></div>` : ""}
+      ${isTeacher ? requestActionsHtml(item) : ""}
     </article>
   `;
+}
+
+function requestActionsHtml(item) {
+  if (item.status === "대기") {
+    return `<div class="button-row"><button data-id="${item.id}" data-status="승인" type="button">승인</button><button class="danger" data-id="${item.id}" data-status="반려" type="button">반려</button></div>`;
+  }
+
+  return `<div class="button-row"><button class="secondary" data-id="${item.id}" data-status="대기" type="button">대기로 되돌리기</button></div>`;
 }
 
 async function refresh() {
