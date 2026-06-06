@@ -437,6 +437,45 @@ textarea:focus {
   margin-top: 18px;
 }
 
+.reagent-page {
+  display: grid;
+  gap: 16px;
+}
+
+.list-summary {
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.pagination {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.pagination button {
+  min-width: 42px;
+  height: 42px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  background: white;
+  color: #334155;
+}
+
+.pagination button.active {
+  border-color: #0f766e;
+  background: #0f766e;
+  color: white;
+}
+
+.pagination button:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
 #requestList {
   grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr);
   align-items: start;

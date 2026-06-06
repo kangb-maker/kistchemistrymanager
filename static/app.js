@@ -24,7 +24,10 @@ const state = {
   editingRequestId: null,
   teacherSection: null,
   publicStudentMode: false,
+  reagentPage: 1,
 };
+
+const REAGENTS_PER_PAGE = 4;
 
 const requestOwnerToken = getRequestOwnerToken();
 
@@ -617,6 +620,7 @@ function renderSearchPanel(container, isTeacher) {
   `;
   container.querySelector("#searchInput").addEventListener("input", async (event) => {
     state.query = event.target.value;
+    state.reagentPage = 1;
     await loadData();
     renderReagentList(container.querySelector("#reagentList"), isTeacher);
   });
@@ -628,7 +632,28 @@ function renderReagentList(container, isTeacher) {
     container.innerHTML = `<p class="empty">검색 결과가 없습니다.</p>`;
     return;
   }
-  container.innerHTML = state.reagents.map((item) => reagentCardHtml(item, isTeacher)).join("");
+
+  const totalPages = Math.ceil(state.reagents.length / REAGENTS_PER_PAGE);
+  state.reagentPage = Math.min(Math.max(state.reagentPage, 1), totalPages);
+  const start = (state.reagentPage - 1) * REAGENTS_PER_PAGE;
+  const pageItems = state.reagents.slice(start, start + REAGENTS_PER_PAGE);
+
+  container.innerHTML = `
+    <p class="list-summary">총 ${state.reagents.length}개 · ${state.reagentPage}/${totalPages}페이지</p>
+    <div class="reagent-page">
+      ${pageItems.map((item) => reagentCardHtml(item, isTeacher)).join("")}
+    </div>
+    ${paginationHtml(totalPages)}
+  `;
+
+  container.querySelectorAll("[data-reagent-page]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.reagentPage = Number(button.dataset.reagentPage);
+      renderReagentList(container, isTeacher);
+      container.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  });
+
   if (!isTeacher) return;
 
   container.querySelectorAll("[data-edit]").forEach((button) => {
@@ -641,6 +666,34 @@ function renderReagentList(container, isTeacher) {
       await refresh();
     });
   });
+}
+
+function paginationHtml(totalPages) {
+  if (totalPages <= 1) return "";
+
+  const current = state.reagentPage;
+  const first = Math.max(1, Math.min(current - 2, totalPages - 4));
+  const last = Math.min(totalPages, first + 4);
+  const pageButtons = [];
+
+  for (let page = first; page <= last; page += 1) {
+    pageButtons.push(`
+      <button
+        class="${page === current ? "active" : ""}"
+        data-reagent-page="${page}"
+        type="button"
+        ${page === current ? 'aria-current="page"' : ""}
+      >${page}</button>
+    `);
+  }
+
+  return `
+    <nav class="pagination" aria-label="시약 목록 페이지">
+      <button data-reagent-page="${current - 1}" type="button" ${current === 1 ? "disabled" : ""}>이전</button>
+      ${pageButtons.join("")}
+      <button data-reagent-page="${current + 1}" type="button" ${current === totalPages ? "disabled" : ""}>다음</button>
+    </nav>
+  `;
 }
 
 function reagentCardHtml(item, isTeacher) {
