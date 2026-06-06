@@ -11,3 +11,9 @@ services:
         value: teacher1234
       - key: STUDENT_PASSWORD
         value: student1234
+      - key: TEACHER_SIGNUP_KEY
+        value: teacher-invite-2026
+      - key: ADMIN_USERNAME
+        value: admin
+      - key: ADMIN_PASSWORD
+        value: change-this-admin-password

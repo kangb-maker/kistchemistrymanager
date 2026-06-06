@@ -14,7 +14,7 @@
         <div>
           <p class="pill">AI · Science Lab Platform</p>
           <h1>시약장을 부탁해</h1>
-          <p class="credits">제작: 강규빈 · 민혜주 · 황예음</p>
+          <p class="credits">제작자 민혜주 · 황예음 · 강규빈</p>
           <p class="lead">천진한국국제학교 선생님들과 학생들이 과학실을 보다 효율적이고 편하게 사용할 수 있도록 제작한 AI 기반 플랫폼입니다.</p>
         </div>
         <div class="stat-grid">
@@ -31,34 +31,52 @@
           <p class="muted">학생은 시약 검색과 과학실 사용 신청을, 선생님은 시약 관리와 신청 승인을 할 수 있습니다.</p>
           <div class="role-grid">
             <button class="role-card" id="studentModeButton" type="button">
-              <strong>학생으로 시작</strong>
-              <span>시약 검색, AI 안전 정보 확인, 과학실 사용 신청</span>
+              <strong>로그인</strong>
+              <span>개인 아이디와 비밀번호로 접속합니다.</span>
             </button>
-            <button class="role-card" id="teacherModeButton" type="button">
-              <strong>선생님으로 시작</strong>
-              <span>시약 등록·수정·삭제, 학생 계획서 확인, 승인/반려</span>
+            <button class="role-card" id="signupModeButton" type="button">
+              <strong>회원가입</strong>
+              <span>학생 또는 선생님 계정 가입을 신청합니다.</span>
             </button>
           </div>
         </section>
 
-        <section class="panel auth-panel" id="studentLoginPanel" hidden>
-          <h2>학생 로그인</h2>
-          <form id="studentLoginForm" class="form-grid three">
-            <input name="name" placeholder="이름" required />
-            <input name="student_id" placeholder="학번" required />
-            <input name="password" type="password" placeholder="학생 비밀번호" required />
-            <button type="submit">학생 로그인</button>
-          </form>
-          <p class="hint">발표용 예시 학생 비밀번호: student1234</p>
-        </section>
-
-        <section class="panel auth-panel" id="teacherLoginPanel" hidden>
-          <h2>선생님 관리자 로그인</h2>
-          <form id="teacherLoginForm" class="form-grid two">
-            <input name="teacher_key" type="password" placeholder="교사 관리자 비밀번호" required />
+        <section class="panel auth-panel" id="loginPanel" hidden>
+          <h2>개인 계정 로그인</h2>
+          <form id="accountLoginForm" class="form-grid two">
+            <input name="username" placeholder="아이디" autocomplete="username" required />
+            <input name="password" type="password" placeholder="비밀번호" autocomplete="current-password" required />
             <button type="submit">로그인</button>
           </form>
-          <p class="hint">발표용 예시 교사 비밀번호: teacher1234</p>
+          <p class="hint">가입 승인을 받은 계정만 로그인할 수 있습니다.</p>
+        </section>
+
+        <section class="panel auth-panel" id="signupPanel" hidden>
+          <h2>회원가입 신청</h2>
+          <form id="signupForm" class="signup-form">
+            <div class="form-grid two-equal">
+              <label>사용자 구분
+                <select name="role" id="signupRole">
+                  <option value="student">학생</option>
+                  <option value="teacher">선생님</option>
+                </select>
+              </label>
+              <label>이름<input name="name" placeholder="실명" required /></label>
+              <label>아이디<input name="username" minlength="4" placeholder="4자 이상" autocomplete="username" required /></label>
+              <label>비밀번호<input name="password" minlength="8" type="password" placeholder="8자 이상" autocomplete="new-password" required /></label>
+              <label id="studentIdField">학번<input name="student_id" placeholder="예: 30201" /></label>
+              <label id="teacherInviteField" hidden>선생님 가입 초대키<input name="invite_key" type="password" placeholder="담당 관리자에게 문의" /></label>
+            </div>
+            <div class="privacy-box">
+              <strong>개인정보 수집 및 이용 안내</strong>
+              <p>수집 항목: 이름, 학번, 아이디, 비밀번호 해시, 사용자 권한</p>
+              <p>이용 목적: 사용자 확인, 과학실 신청 및 승인 관리</p>
+              <p>보유 기간: 재학·재직 기간 또는 회원 탈퇴 시까지</p>
+              <label class="check-label"><input name="privacy_agreed" type="checkbox" /> 위 내용을 확인했고 수집 및 이용에 동의합니다.</label>
+            </div>
+            <button type="submit">가입 신청하기</button>
+          </form>
+          <p class="hint">가입 후 선생님 또는 최고 관리자의 승인이 필요합니다.</p>
         </section>
       </section>
     </template>

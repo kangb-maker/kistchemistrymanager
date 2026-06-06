@@ -18,6 +18,7 @@ const state = {
   student: null,
   reagents: [],
   requests: [],
+  users: [],
   query: "",
   editingId: null,
   teacherSection: null,
@@ -179,15 +180,18 @@ function analyzeExperimentPlan(reagentsText, safetyPlan) {
 }
 
 async function loadData() {
-  const [session, reagents, requests] = await Promise.all([
-    requestJson("/api/session"),
+  const session = await requestJson("/api/session");
+  const privileged = session.role === "teacher" || session.role === "admin";
+  const [reagents, requests, users] = await Promise.all([
     requestJson(`/api/reagents${state.query ? `?q=${encodeURIComponent(state.query)}` : ""}`),
     requestJson("/api/requests"),
+    privileged ? requestJson("/api/users") : Promise.resolve([]),
   ]);
   state.role = session.role;
   state.student = session.student;
   state.reagents = reagents;
   state.requests = requests;
+  state.users = users;
 }
 
 function dangerCount() {
@@ -218,18 +222,18 @@ function renderHome() {
   document.querySelector("#statPending").textContent = pendingCount();
 
   document.querySelector("#studentModeButton").addEventListener("click", () => {
-    document.querySelector("#studentLoginPanel").hidden = false;
-    document.querySelector("#teacherLoginPanel").hidden = true;
+    document.querySelector("#loginPanel").hidden = false;
+    document.querySelector("#signupPanel").hidden = true;
   });
-  document.querySelector("#teacherModeButton").addEventListener("click", () => {
-    document.querySelector("#teacherLoginPanel").hidden = false;
-    document.querySelector("#studentLoginPanel").hidden = true;
+  document.querySelector("#signupModeButton").addEventListener("click", () => {
+    document.querySelector("#signupPanel").hidden = false;
+    document.querySelector("#loginPanel").hidden = true;
   });
 
-  document.querySelector("#studentLoginForm").addEventListener("submit", async (event) => {
+  document.querySelector("#accountLoginForm").addEventListener("submit", async (event) => {
     event.preventDefault();
     try {
-      await requestJson("/api/login/student", {
+      await requestJson("/api/login", {
         method: "POST",
         body: JSON.stringify(Object.fromEntries(new FormData(event.currentTarget))),
       });
@@ -239,14 +243,27 @@ function renderHome() {
     }
   });
 
-  document.querySelector("#teacherLoginForm").addEventListener("submit", async (event) => {
+  const signupRole = document.querySelector("#signupRole");
+  signupRole.addEventListener("change", () => {
+    const isTeacher = signupRole.value === "teacher";
+    document.querySelector("#studentIdField").hidden = isTeacher;
+    document.querySelector("#teacherInviteField").hidden = !isTeacher;
+  });
+
+  document.querySelector("#signupForm").addEventListener("submit", async (event) => {
     event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    const payload = Object.fromEntries(formData);
+    payload.privacy_agreed = formData.get("privacy_agreed") === "on";
     try {
-      await requestJson("/api/login/teacher", {
+      const result = await requestJson("/api/register", {
         method: "POST",
-        body: JSON.stringify(Object.fromEntries(new FormData(event.currentTarget))),
+        body: JSON.stringify(payload),
       });
-      await refresh();
+      alert(result.message);
+      event.currentTarget.reset();
+      document.querySelector("#signupPanel").hidden = true;
+      document.querySelector("#loginPanel").hidden = false;
     } catch (error) {
       alert(error.message);
     }
@@ -258,7 +275,11 @@ function renderDashboard() {
   app.replaceChildren(template.content.cloneNode(true));
 
   const isStudent = state.role === "student";
-  document.querySelector("#dashboardTitle").textContent = isStudent ? `${state.student.name} 학생` : "선생님 관리자";
+  document.querySelector("#dashboardTitle").textContent = isStudent
+    ? `${state.student.name} 학생`
+    : state.role === "admin"
+      ? "최고 관리자"
+      : "선생님 관리자";
   document.querySelector("#dashboardSubtitle").textContent = isStudent
     ? "시약 정보를 조회하고 과학실 사용 신청서를 제출합니다."
     : "시약 목록과 학생 실험 계획서를 관리합니다.";
@@ -331,6 +352,7 @@ function renderTeacherDashboard() {
   const body = document.querySelector("#dashboardBody");
   if (state.teacherSection === "reagents") renderTeacherReagentManager(body);
   if (state.teacherSection === "requests") renderTeacherRequestManager(body);
+  if (state.teacherSection === "members") renderMemberManager(body);
 }
 
 function renderTeacherSectionPicker() {
@@ -352,6 +374,11 @@ function renderTeacherSectionPicker() {
           <span>대기·승인·반려 신청서를 따로 보고 처리합니다.</span>
           ${waiting ? `<em>${waiting}건 대기 중</em>` : ""}
         </button>
+        <button class="role-card" id="openMembersButton" type="button">
+          <strong>회원 가입 승인·관리</strong>
+          <span>가입 신청을 승인하거나 반려하고 계정 상태를 관리합니다.</span>
+          ${pendingUserCount() ? `<em>${pendingUserCount()}명 승인 대기</em>` : ""}
+        </button>
       </div>
     </section>
   `;
@@ -362,6 +389,10 @@ function renderTeacherSectionPicker() {
   });
   document.querySelector("#openRequestsButton").addEventListener("click", async () => {
     state.teacherSection = "requests";
+    await refresh();
+  });
+  document.querySelector("#openMembersButton").addEventListener("click", async () => {
+    state.teacherSection = "members";
     await refresh();
   });
 }
@@ -450,6 +481,101 @@ function renderTeacherRequestManager(body) {
     await refresh();
   });
   renderRequestList(true);
+}
+
+function pendingUserCount() {
+  return state.users.filter((user) => user.status === "pending").length;
+}
+
+function renderMemberManager(body) {
+  const pending = state.users.filter((user) => user.status === "pending");
+  const approved = state.users.filter((user) => user.status === "approved");
+  const rejected = state.users.filter((user) => user.status === "rejected");
+
+  body.className = "app-shell dashboard-grid";
+  body.innerHTML = `
+    <section class="panel teacher-toolbar">
+      <div>
+        <p class="eyebrow">Members</p>
+        <h2>회원 가입 승인·관리</h2>
+        <p class="muted">학생 계정은 선생님이 승인할 수 있고, 선생님 계정은 최고 관리자만 승인할 수 있습니다.</p>
+      </div>
+      <button class="secondary" id="backToTeacherMenu" type="button">선생님 메뉴로</button>
+    </section>
+    ${pending.length ? `<section class="notice-banner full-width"><strong>승인 대기 ${pending.length}명</strong><span>가입 정보를 확인한 뒤 승인 또는 반려하세요.</span></section>` : ""}
+    <section class="member-grid">
+      ${memberGroupHtml("승인 대기", pending, "pending")}
+      ${memberGroupHtml("승인된 회원", approved, "approved")}
+      ${memberGroupHtml("반려된 회원", rejected, "rejected")}
+    </section>
+  `;
+
+  document.querySelector("#backToTeacherMenu").addEventListener("click", async () => {
+    state.teacherSection = null;
+    await refresh();
+  });
+
+  body.querySelectorAll("[data-user-status]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      await requestJson(`/api/users/${button.dataset.userId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: button.dataset.userStatus }),
+      });
+      await refresh();
+    });
+  });
+
+  body.querySelectorAll("[data-delete-user]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      if (!confirm("이 회원 계정을 삭제할까요?")) return;
+      await requestJson(`/api/users/${button.dataset.deleteUser}`, { method: "DELETE" });
+      await refresh();
+    });
+  });
+}
+
+function memberGroupHtml(title, users, status) {
+  return `
+    <section class="request-column" data-member-group="${status}">
+      <div class="request-column-head">
+        <h3>${title}</h3>
+        <span>${users.length}명</span>
+      </div>
+      <div class="request-stack">
+        ${users.length ? users.map(memberCardHtml).join("") : `<p class="empty compact">해당 회원이 없습니다.</p>`}
+      </div>
+    </section>
+  `;
+}
+
+function memberCardHtml(user) {
+  const roleLabel = user.role === "student" ? "학생" : user.role === "teacher" ? "선생님" : "최고 관리자";
+  const identity = user.student_id ? `학번 ${user.student_id}` : roleLabel;
+  const canDelete = state.role === "admin" && user.role !== "admin";
+
+  let actions = "";
+  if (user.role !== "admin") {
+    if (user.status === "pending") {
+      actions = `<button data-user-id="${user.id}" data-user-status="approved" type="button">승인</button><button class="danger" data-user-id="${user.id}" data-user-status="rejected" type="button">반려</button>`;
+    } else {
+      actions = `<button class="secondary" data-user-id="${user.id}" data-user-status="pending" type="button">승인 대기로 이동</button>`;
+    }
+    if (canDelete) actions += `<button class="danger" data-delete-user="${user.id}" type="button">계정 삭제</button>`;
+  }
+
+  return `
+    <article class="member-card">
+      <div class="card-head">
+        <div>
+          <h3>${user.name}</h3>
+          <p class="muted">@${user.username} · ${identity}</p>
+        </div>
+        <span class="status-badge">${roleLabel}</span>
+      </div>
+      <p class="member-date">가입 신청: ${user.created_at}</p>
+      ${actions ? `<div class="button-row">${actions}</div>` : ""}
+    </article>
+  `;
 }
 
 function renderSearchPanel(container, isTeacher) {

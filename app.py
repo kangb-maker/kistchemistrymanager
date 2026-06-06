@@ -5,12 +5,16 @@ import sqlite3
 from pathlib import Path
 
 from flask import Flask, jsonify, render_template, request, session
+from werkzeug.security import check_password_hash, generate_password_hash
 
 
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = BASE_DIR / "lab.db"
 TEACHER_KEY = os.environ.get("TEACHER_KEY", "teacher1234")
 STUDENT_PASSWORD = os.environ.get("STUDENT_PASSWORD", "student1234")
+TEACHER_SIGNUP_KEY = os.environ.get("TEACHER_SIGNUP_KEY", "teacher-invite-2026")
+ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin1234")
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-before-deploy")
@@ -44,6 +48,16 @@ REQUEST_FIELDS = [
     "created_at",
 ]
 
+USER_FIELDS = [
+    "id",
+    "username",
+    "name",
+    "student_id",
+    "role",
+    "status",
+    "created_at",
+]
+
 
 def get_db() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH)
@@ -70,6 +84,39 @@ def init_db() -> None:
             )
             """
         )
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL,
+                name TEXT NOT NULL,
+                student_id TEXT DEFAULT '',
+                role TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+
+        admin = conn.execute(
+            "SELECT id FROM users WHERE username = ?",
+            (ADMIN_USERNAME,),
+        ).fetchone()
+        if admin is None:
+            conn.execute(
+                """
+                INSERT INTO users
+                    (username, password_hash, name, student_id, role, status)
+                VALUES (?, ?, ?, '', 'admin', 'approved')
+                """,
+                (
+                    ADMIN_USERNAME,
+                    generate_password_hash(ADMIN_PASSWORD),
+                    "최고 관리자",
+                ),
+            )
         ensure_column(conn, "reagents", "english_name", "TEXT DEFAULT ''")
         ensure_column(conn, "reagents", "chemical_code", "TEXT DEFAULT ''")
         ensure_column(conn, "reagents", "hazard_level", "TEXT DEFAULT ''")
@@ -142,7 +189,7 @@ def role() -> str | None:
 
 
 def require_teacher():
-    if role() != "teacher":
+    if role() not in {"teacher", "admin"}:
         return jsonify({"message": "선생님 관리자 권한이 필요합니다."}), 403
     return None
 
@@ -154,7 +201,115 @@ def index():
 
 @app.get("/api/session")
 def session_status():
-    return jsonify({"role": role(), "student": session.get("student")})
+    return jsonify(
+        {
+            "role": role(),
+            "student": session.get("student"),
+            "user": session.get("user"),
+        }
+    )
+
+
+@app.post("/api/register")
+def register():
+    data = request.get_json(silent=True) or {}
+    username = data.get("username", "").strip()
+    password = data.get("password", "")
+    name = data.get("name", "").strip()
+    student_id = data.get("student_id", "").strip()
+    requested_role = data.get("role", "student").strip()
+    invite_key = data.get("invite_key", "")
+    privacy_agreed = data.get("privacy_agreed") is True
+
+    if not privacy_agreed:
+        return jsonify({"message": "개인정보 수집 및 이용에 동의해야 합니다."}), 400
+    if requested_role not in {"student", "teacher"}:
+        return jsonify({"message": "가입 권한이 올바르지 않습니다."}), 400
+    if not username or not password or not name:
+        return jsonify({"message": "아이디, 비밀번호, 이름은 필수입니다."}), 400
+    if len(username) < 4:
+        return jsonify({"message": "아이디는 4자 이상이어야 합니다."}), 400
+    if len(password) < 8:
+        return jsonify({"message": "비밀번호는 8자 이상이어야 합니다."}), 400
+    if requested_role == "student" and not student_id:
+        return jsonify({"message": "학생은 학번을 입력해야 합니다."}), 400
+    if requested_role == "teacher" and invite_key != TEACHER_SIGNUP_KEY:
+        return jsonify({"message": "선생님 가입 초대키가 올바르지 않습니다."}), 401
+
+    with get_db() as conn:
+        duplicate = conn.execute(
+            "SELECT id FROM users WHERE username = ?",
+            (username,),
+        ).fetchone()
+        if duplicate:
+            return jsonify({"message": "이미 사용 중인 아이디입니다."}), 409
+
+        if student_id:
+            duplicate_student = conn.execute(
+                "SELECT id FROM users WHERE student_id = ?",
+                (student_id,),
+            ).fetchone()
+            if duplicate_student:
+                return jsonify({"message": "이미 등록된 학번입니다."}), 409
+
+        conn.execute(
+            """
+            INSERT INTO users
+                (username, password_hash, name, student_id, role, status)
+            VALUES (?, ?, ?, ?, ?, 'pending')
+            """,
+            (
+                username,
+                generate_password_hash(password),
+                name,
+                student_id,
+                requested_role,
+            ),
+        )
+
+    return jsonify({"message": "가입 신청이 완료되었습니다. 관리자 승인 후 로그인할 수 있습니다."}), 201
+
+
+@app.post("/api/login")
+def account_login():
+    data = request.get_json(silent=True) or {}
+    username = data.get("username", "").strip()
+    password = data.get("password", "")
+
+    with get_db() as conn:
+        user = conn.execute(
+            """
+            SELECT id, username, password_hash, name, student_id, role, status
+            FROM users
+            WHERE username = ?
+            """,
+            (username,),
+        ).fetchone()
+
+    if user is None or not check_password_hash(user["password_hash"], password):
+        return jsonify({"message": "아이디 또는 비밀번호가 올바르지 않습니다."}), 401
+    if user["status"] == "pending":
+        return jsonify({"message": "가입 승인 대기 중입니다."}), 403
+    if user["status"] == "rejected":
+        return jsonify({"message": "가입이 승인되지 않은 계정입니다."}), 403
+
+    session.clear()
+    session["user_id"] = user["id"]
+    session["role"] = user["role"]
+    session["user"] = {
+        "id": user["id"],
+        "username": user["username"],
+        "name": user["name"],
+        "student_id": user["student_id"],
+        "role": user["role"],
+    }
+    if user["role"] == "student":
+        session["student"] = {
+            "name": user["name"],
+            "student_id": user["student_id"],
+        }
+
+    return jsonify({"role": user["role"], "user": session["user"], "student": session.get("student")})
 
 
 @app.post("/api/login/student")
@@ -189,6 +344,77 @@ def teacher_login():
 def logout():
     session.clear()
     return jsonify({"role": None})
+
+
+@app.get("/api/users")
+def list_users():
+    if role() not in {"teacher", "admin"}:
+        return jsonify({"message": "회원 관리 권한이 필요합니다."}), 403
+
+    fields = ", ".join(USER_FIELDS)
+    with get_db() as conn:
+        if role() == "admin":
+            rows = conn.execute(
+                f"SELECT {fields} FROM users ORDER BY status DESC, id DESC"
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                f"""
+                SELECT {fields}
+                FROM users
+                WHERE role = 'student'
+                ORDER BY status DESC, id DESC
+                """
+            ).fetchall()
+
+    return jsonify([row_dict(row, USER_FIELDS) for row in rows])
+
+
+@app.patch("/api/users/<int:user_id>")
+def update_user_status(user_id: int):
+    if role() not in {"teacher", "admin"}:
+        return jsonify({"message": "회원 관리 권한이 필요합니다."}), 403
+
+    data = request.get_json(silent=True) or {}
+    status = data.get("status", "").strip()
+    if status not in {"pending", "approved", "rejected"}:
+        return jsonify({"message": "회원 상태 값이 올바르지 않습니다."}), 400
+
+    with get_db() as conn:
+        target = conn.execute(
+            "SELECT id, role FROM users WHERE id = ?",
+            (user_id,),
+        ).fetchone()
+        if target is None:
+            return jsonify({"message": "회원을 찾을 수 없습니다."}), 404
+        if target["role"] in {"teacher", "admin"} and role() != "admin":
+            return jsonify({"message": "선생님 계정은 최고 관리자만 승인할 수 있습니다."}), 403
+        if target["role"] == "admin":
+            return jsonify({"message": "최고 관리자 상태는 변경할 수 없습니다."}), 400
+
+        conn.execute("UPDATE users SET status = ? WHERE id = ?", (status, user_id))
+        row = conn.execute(
+            f"SELECT {', '.join(USER_FIELDS)} FROM users WHERE id = ?",
+            (user_id,),
+        ).fetchone()
+
+    return jsonify(row_dict(row, USER_FIELDS))
+
+
+@app.delete("/api/users/<int:user_id>")
+def delete_user(user_id: int):
+    if role() != "admin":
+        return jsonify({"message": "최고 관리자 권한이 필요합니다."}), 403
+
+    with get_db() as conn:
+        target = conn.execute("SELECT role FROM users WHERE id = ?", (user_id,)).fetchone()
+        if target is None:
+            return jsonify({"message": "회원을 찾을 수 없습니다."}), 404
+        if target["role"] == "admin":
+            return jsonify({"message": "최고 관리자 계정은 삭제할 수 없습니다."}), 400
+        conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+
+    return jsonify({"message": "회원 계정이 삭제되었습니다."})
 
 
 @app.get("/api/reagents")
