@@ -31,52 +31,48 @@
           <p class="muted">학생은 시약 검색과 과학실 사용 신청을, 선생님은 시약 관리와 신청 승인을 할 수 있습니다.</p>
           <div class="role-grid">
             <button class="role-card" id="studentModeButton" type="button">
-              <strong>로그인</strong>
-              <span>개인 아이디와 비밀번호로 접속합니다.</span>
+              <strong>학생으로 바로 시작</strong>
+              <span>로그인 없이 시약 검색과 과학실 사용 신청을 할 수 있습니다.</span>
             </button>
-            <button class="role-card" id="signupModeButton" type="button">
-              <strong>회원가입</strong>
-              <span>학생 또는 선생님 계정 가입을 신청합니다.</span>
+            <button class="role-card" id="teacherModeButton" type="button">
+              <strong>선생님 로그인</strong>
+              <span>시약 관리와 신청서 확인을 위해 선생님 계정으로 접속합니다.</span>
             </button>
           </div>
         </section>
 
         <section class="panel auth-panel" id="loginPanel" hidden>
-          <h2>개인 계정 로그인</h2>
+          <h2>선생님 계정 로그인</h2>
           <form id="accountLoginForm" class="form-grid two">
             <input name="username" placeholder="아이디" autocomplete="username" required />
             <input name="password" type="password" placeholder="비밀번호" autocomplete="current-password" required />
             <button type="submit">로그인</button>
           </form>
-          <p class="hint">가입 승인을 받은 계정만 로그인할 수 있습니다.</p>
+          <div class="auth-actions">
+            <p class="hint">가입 승인을 받은 선생님 계정만 로그인할 수 있습니다.</p>
+            <button class="secondary" id="showTeacherSignup" type="button">선생님 회원가입</button>
+          </div>
         </section>
 
         <section class="panel auth-panel" id="signupPanel" hidden>
-          <h2>회원가입 신청</h2>
+          <h2>선생님 회원가입 신청</h2>
           <form id="signupForm" class="signup-form">
             <div class="form-grid two-equal">
-              <label>사용자 구분
-                <select name="role" id="signupRole">
-                  <option value="student">학생</option>
-                  <option value="teacher">선생님</option>
-                </select>
-              </label>
               <label>이름<input name="name" placeholder="실명" required /></label>
               <label>아이디<input name="username" minlength="4" placeholder="4자 이상" autocomplete="username" required /></label>
               <label>비밀번호<input name="password" minlength="8" type="password" placeholder="8자 이상" autocomplete="new-password" required /></label>
-              <label id="studentIdField">학번<input name="student_id" placeholder="예: 30201" /></label>
-              <label id="teacherInviteField" hidden>선생님 가입 초대키<input name="invite_key" type="password" placeholder="담당 관리자에게 문의" /></label>
+              <label>선생님 가입 초대키<input name="invite_key" type="password" placeholder="담당 관리자에게 문의" required /></label>
             </div>
             <div class="privacy-box">
               <strong>개인정보 수집 및 이용 안내</strong>
-              <p>수집 항목: 이름, 학번, 아이디, 비밀번호 해시, 사용자 권한</p>
-              <p>이용 목적: 사용자 확인, 과학실 신청 및 승인 관리</p>
+              <p>수집 항목: 이름, 아이디, 비밀번호 해시, 사용자 권한</p>
+              <p>이용 목적: 선생님 사용자 확인과 과학실 관리 기능 제공</p>
               <p>보유 기간: 재학·재직 기간 또는 회원 탈퇴 시까지</p>
               <label class="check-label"><input name="privacy_agreed" type="checkbox" /> 위 내용을 확인했고 수집 및 이용에 동의합니다.</label>
             </div>
             <button type="submit">가입 신청하기</button>
           </form>
-          <p class="hint">가입 후 선생님 또는 최고 관리자의 승인이 필요합니다.</p>
+          <p class="hint">가입 후 최고 관리자의 승인이 필요합니다.</p>
         </section>
       </section>
     </template>

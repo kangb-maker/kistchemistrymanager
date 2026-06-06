@@ -21,8 +21,20 @@ const state = {
   users: [],
   query: "",
   editingId: null,
+  editingRequestId: null,
   teacherSection: null,
+  publicStudentMode: false,
 };
+
+const requestOwnerToken = getRequestOwnerToken();
+
+function getRequestOwnerToken() {
+  const saved = localStorage.getItem("science-lab-request-owner");
+  if (saved) return saved;
+  const token = crypto.randomUUID();
+  localStorage.setItem("science-lab-request-owner", token);
+  return token;
+}
 
 async function requestJson(url, options = {}) {
   const response = await fetch(url, {
@@ -184,8 +196,8 @@ async function loadData() {
   const privileged = session.role === "teacher" || session.role === "admin";
   const [reagents, requests, users] = await Promise.all([
     requestJson(`/api/reagents${state.query ? `?q=${encodeURIComponent(state.query)}` : ""}`),
-    requestJson("/api/requests"),
-    privileged ? requestJson("/api/users") : Promise.resolve([]),
+    requestJson(privileged ? "/api/requests" : `/api/requests?owner_token=${encodeURIComponent(requestOwnerToken)}`),
+    session.role === "admin" ? requestJson("/api/users") : Promise.resolve([]),
   ]);
   state.role = session.role;
   state.student = session.student;
@@ -222,12 +234,12 @@ function renderHome() {
   document.querySelector("#statPending").textContent = pendingCount();
 
   document.querySelector("#studentModeButton").addEventListener("click", () => {
+    state.publicStudentMode = true;
+    renderDashboard();
+  });
+  document.querySelector("#teacherModeButton").addEventListener("click", () => {
     document.querySelector("#loginPanel").hidden = false;
     document.querySelector("#signupPanel").hidden = true;
-  });
-  document.querySelector("#signupModeButton").addEventListener("click", () => {
-    document.querySelector("#signupPanel").hidden = false;
-    document.querySelector("#loginPanel").hidden = true;
   });
 
   document.querySelector("#accountLoginForm").addEventListener("submit", async (event) => {
@@ -243,11 +255,9 @@ function renderHome() {
     }
   });
 
-  const signupRole = document.querySelector("#signupRole");
-  signupRole.addEventListener("change", () => {
-    const isTeacher = signupRole.value === "teacher";
-    document.querySelector("#studentIdField").hidden = isTeacher;
-    document.querySelector("#teacherInviteField").hidden = !isTeacher;
+  document.querySelector("#showTeacherSignup").addEventListener("click", () => {
+    document.querySelector("#signupPanel").hidden = false;
+    document.querySelector("#loginPanel").hidden = true;
   });
 
   document.querySelector("#signupForm").addEventListener("submit", async (event) => {
@@ -274,9 +284,9 @@ function renderDashboard() {
   const template = document.querySelector("#dashboardTemplate");
   app.replaceChildren(template.content.cloneNode(true));
 
-  const isStudent = state.role === "student";
+  const isStudent = state.publicStudentMode;
   document.querySelector("#dashboardTitle").textContent = isStudent
-    ? `${state.student.name} 학생`
+    ? "학생 과학실 이용"
     : state.role === "admin"
       ? "최고 관리자"
       : "선생님 관리자";
@@ -284,9 +294,11 @@ function renderDashboard() {
     ? "시약 정보를 조회하고 과학실 사용 신청서를 제출합니다."
     : "시약 목록과 학생 실험 계획서를 관리합니다.";
   document.querySelector("#logoutButton").addEventListener("click", async () => {
-    await requestJson("/api/logout", { method: "POST" });
+    if (state.role) await requestJson("/api/logout", { method: "POST" });
     state.query = "";
     state.teacherSection = null;
+    state.publicStudentMode = false;
+    state.editingRequestId = null;
     await refresh();
   });
 
@@ -304,6 +316,8 @@ function renderStudentDashboard() {
       <div class="panel-heading"><div><p class="eyebrow">Request</p><h2>과학실 사용 신청 및 계획서 제출</h2></div></div>
       <p class="muted">실험일 기준 최소 3일 전부터 신청 가능합니다. 오늘 기준 신청 가능 시작일: ${getMinimumDate()}</p>
       <form id="requestForm" class="stack-form">
+        <label>이름<input name="student_name" placeholder="신청 학생 이름" required /></label>
+        <label>학번<input name="student_id" placeholder="예: 30201" required /></label>
         <label>실험 날짜<input name="lab_date" type="date" min="${getMinimumDate()}" required /></label>
         <label>실험 시간<input name="lab_time" type="time" required /></label>
         <label>실험 제목<input name="experiment_title" placeholder="예: 산염기 중화 반응" required /></label>
@@ -311,7 +325,8 @@ function renderStudentDashboard() {
         <label>사용 예정 시약<textarea name="reagents" placeholder="예: 염산, 수산화나트륨, 에탄올" required></textarea></label>
         <label>안전 계획<textarea name="safety_plan" placeholder="보호구, 폐액 처리, 사고 예방 방법을 작성하세요." required></textarea></label>
         <div class="analysis-box" id="planAnalysis" hidden></div>
-        <button type="submit">신청서 제출하기</button>
+        <button type="submit" id="saveRequestButton">신청서 제출하기</button>
+        <button class="secondary" id="cancelRequestEdit" type="button" hidden>수정 취소</button>
       </form>
       <h3 class="section-title">내 신청 현황</h3>
       <div id="requestList"></div>
@@ -334,17 +349,30 @@ function renderStudentDashboard() {
   });
   requestForm.addEventListener("submit", async (event) => {
     event.preventDefault();
+    const payload = Object.fromEntries(new FormData(requestForm));
+    payload.owner_token = requestOwnerToken;
+    const url = state.editingRequestId ? `/api/requests/${state.editingRequestId}` : "/api/requests";
+    const method = state.editingRequestId ? "PUT" : "POST";
     try {
-      await requestJson("/api/requests", {
-        method: "POST",
-        body: JSON.stringify(Object.fromEntries(new FormData(requestForm))),
+      await requestJson(url, {
+        method,
+        body: JSON.stringify(payload),
       });
+      const wasEditing = Boolean(state.editingRequestId);
+      state.editingRequestId = null;
       requestForm.reset();
       await refresh();
-      alert("과학실 사용 신청서와 실험 계획서가 제출되었습니다.");
+      alert(wasEditing ? "신청서가 수정되어 다시 대기 상태로 이동했습니다." : "과학실 사용 신청서와 실험 계획서가 제출되었습니다.");
     } catch (error) {
       alert(error.message);
     }
+  });
+
+  document.querySelector("#cancelRequestEdit").addEventListener("click", () => {
+    state.editingRequestId = null;
+    requestForm.reset();
+    document.querySelector("#saveRequestButton").textContent = "신청서 제출하기";
+    document.querySelector("#cancelRequestEdit").hidden = true;
   });
 }
 
@@ -374,11 +402,11 @@ function renderTeacherSectionPicker() {
           <span>대기·승인·반려 신청서를 따로 보고 처리합니다.</span>
           ${waiting ? `<em>${waiting}건 대기 중</em>` : ""}
         </button>
-        <button class="role-card" id="openMembersButton" type="button">
+        ${state.role === "admin" ? `<button class="role-card" id="openMembersButton" type="button">
           <strong>회원 가입 승인·관리</strong>
-          <span>가입 신청을 승인하거나 반려하고 계정 상태를 관리합니다.</span>
+          <span>선생님 가입 신청을 승인하거나 반려하고 계정 상태를 관리합니다.</span>
           ${pendingUserCount() ? `<em>${pendingUserCount()}명 승인 대기</em>` : ""}
-        </button>
+        </button>` : ""}
       </div>
     </section>
   `;
@@ -391,10 +419,13 @@ function renderTeacherSectionPicker() {
     state.teacherSection = "requests";
     await refresh();
   });
-  document.querySelector("#openMembersButton").addEventListener("click", async () => {
-    state.teacherSection = "members";
-    await refresh();
-  });
+  const membersButton = document.querySelector("#openMembersButton");
+  if (membersButton) {
+    membersButton.addEventListener("click", async () => {
+      state.teacherSection = "members";
+      await refresh();
+    });
+  }
 }
 
 function renderTeacherReagentManager(body) {
@@ -705,6 +736,9 @@ function renderRequestList(isTeacher) {
   }
 
   container.innerHTML = state.requests.map((item) => requestCardHtml(item, isTeacher)).join("");
+  container.querySelectorAll("[data-edit-request]").forEach((button) => {
+    button.addEventListener("click", () => startRequestEdit(Number(button.dataset.editRequest)));
+  });
 }
 
 function requestCardHtml(item, isTeacher) {
@@ -728,9 +762,33 @@ function requestCardHtml(item, isTeacher) {
         <p><strong>안전 계획:</strong> ${item.safety_plan}</p>
         <p>AI 계획서 분석: ${analysis.summary} / 인식된 시약: ${analysis.detected}</p>
       </div>
-      ${isTeacher ? requestActionsHtml(item) : ""}
+      ${isTeacher ? requestActionsHtml(item) : `<div class="button-row"><button class="secondary" data-edit-request="${item.id}" type="button">신청서 수정</button></div>`}
     </article>
   `;
+}
+
+function startRequestEdit(id) {
+  const item = state.requests.find((requestItem) => requestItem.id === id);
+  const form = document.querySelector("#requestForm");
+  if (!item || !form) return;
+
+  state.editingRequestId = id;
+  const fieldMap = {
+    student_name: item.student_name,
+    student_id: item.student_id,
+    lab_date: item.lab_date,
+    lab_time: item.lab_time,
+    experiment_title: item.experiment_title,
+    purpose: item.purpose,
+    reagents: item.reagents,
+    safety_plan: item.safety_plan,
+  };
+  Object.entries(fieldMap).forEach(([name, value]) => {
+    form.elements[name].value = value || "";
+  });
+  document.querySelector("#saveRequestButton").textContent = "신청서 수정 완료";
+  document.querySelector("#cancelRequestEdit").hidden = false;
+  form.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function requestActionsHtml(item) {
@@ -743,7 +801,7 @@ function requestActionsHtml(item) {
 
 async function refresh() {
   await loadData();
-  if (!state.role) renderHome();
+  if (!state.role && !state.publicStudentMode) renderHome();
   else renderDashboard();
 }
 

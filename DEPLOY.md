@@ -16,8 +16,6 @@ Start Command: gunicorn app:app
 
 ```text
 SECRET_KEY: 아무 긴 랜덤 문자열
-TEACHER_KEY: 선생님 관리자 비밀번호
-STUDENT_PASSWORD: 학생 공통 비밀번호
 TEACHER_SIGNUP_KEY: 선생님 회원가입 초대키
 ADMIN_USERNAME: 최고 관리자 아이디
 ADMIN_PASSWORD: 최고 관리자 비밀번호

@@ -295,6 +295,18 @@ h3 span {
   margin-top: 20px;
 }
 
+.auth-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.auth-actions .hint {
+  margin: 0;
+}
+
 .privacy-box {
   border: 1px solid #bfdbfe;
   border-radius: 18px;
@@ -627,6 +639,7 @@ textarea:focus {
   .member-grid,
   .teacher-toolbar,
   .notice-banner,
+  .auth-actions,
   .role-grid,
   .form-grid.three,
   .form-grid.two-equal,
