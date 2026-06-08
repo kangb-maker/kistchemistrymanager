@@ -58,6 +58,31 @@ function daysUntil(dateString) {
   return Math.ceil((target - getTodayStart()) / (1000 * 60 * 60 * 24));
 }
 
+function timeRangeInfo(startTime, endTime) {
+  if (!startTime || !endTime) {
+    return { valid: false, label: startTime || "시간 미입력", duration: "" };
+  }
+
+  const [startHour, startMinute] = startTime.split(":").map(Number);
+  const [endHour, endMinute] = endTime.split(":").map(Number);
+  const minutes = (endHour * 60 + endMinute) - (startHour * 60 + startMinute);
+  if (!Number.isFinite(minutes) || minutes <= 0) {
+    return { valid: false, label: `${startTime} ~ ${endTime}`, duration: "" };
+  }
+
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  const durationParts = [];
+  if (hours) durationParts.push(`${hours}시간`);
+  if (remainder) durationParts.push(`${remainder}분`);
+
+  return {
+    valid: true,
+    label: `${startTime} ~ ${endTime}`,
+    duration: durationParts.join(" "),
+  };
+}
+
 function addMonths(dateString, months) {
   if (!dateString || !months) return "";
   const date = new Date(`${dateString}T00:00:00`);
@@ -272,15 +297,17 @@ function renderHome() {
 
 function showLoginPanel(loginType) {
   const isStudent = loginType === "student";
+  const loginForm = document.querySelector("#accountLoginForm");
+  loginForm.reset();
   document.querySelector("#loginPanel").hidden = false;
   document.querySelector("#signupPanel").hidden = true;
-  document.querySelector("#loginTitle").textContent = isStudent ? "학생 계정 로그인" : "선생님 계정 로그인";
+  document.querySelector("#loginTitle").textContent = isStudent ? "학생 로그인" : "선생님 로그인";
   document.querySelector("#loginHint").textContent = isStudent
     ? "아이디는 학교에서 발급한 학번입니다."
     : "가입 승인을 받은 선생님 계정으로 로그인하세요.";
   document.querySelector("#showTeacherSignup").hidden = isStudent;
   document.querySelector("#studentPrivacyNote").hidden = !isStudent;
-  document.querySelector("#accountLoginForm").username.focus();
+  loginForm.username.focus();
 }
 
 function renderDashboard() {
@@ -320,7 +347,11 @@ function renderStudentDashboard() {
       <p class="muted">실험일 기준 최소 3일 전부터 신청 가능합니다. 오늘 기준 신청 가능 시작일: ${getMinimumDate()}</p>
       <form id="requestForm" class="stack-form">
         <label>실험 날짜<input name="lab_date" type="date" min="${getMinimumDate()}" required /></label>
-        <label>실험 시간<input name="lab_time" type="time" required /></label>
+        <div class="form-grid two-equal">
+          <label>실험 시작 시간<input name="lab_start_time" type="time" required /></label>
+          <label>실험 종료 시간<input name="lab_end_time" type="time" required /></label>
+        </div>
+        <p class="duration-preview" id="experimentDuration">시작 시간과 종료 시간을 선택하면 예상 실험 시간이 표시됩니다.</p>
         <label>실험 제목<input name="experiment_title" placeholder="예: 산염기 중화 반응" required /></label>
         <label>실험 목적<textarea name="purpose" placeholder="실험을 통해 확인하고 싶은 내용을 작성하세요." required></textarea></label>
         <label>사용 예정 시약<textarea name="reagents" placeholder="예: 염산, 수산화나트륨, 에탄올" required></textarea></label>
@@ -339,6 +370,15 @@ function renderStudentDashboard() {
   const requestForm = document.querySelector("#requestForm");
   requestForm.addEventListener("input", () => {
     const data = Object.fromEntries(new FormData(requestForm));
+    const timeInfo = timeRangeInfo(data.lab_start_time, data.lab_end_time);
+    const durationPreview = document.querySelector("#experimentDuration");
+    durationPreview.textContent = timeInfo.valid
+      ? `${timeInfo.label} · 총 ${timeInfo.duration}`
+      : data.lab_start_time && data.lab_end_time
+        ? "종료 시간은 시작 시간보다 늦게 선택하세요."
+        : "시작 시간과 종료 시간을 선택하면 예상 실험 시간이 표시됩니다.";
+    durationPreview.dataset.valid = String(timeInfo.valid);
+
     const box = document.querySelector("#planAnalysis");
     if (!data.reagents && !data.safety_plan) {
       box.hidden = true;
@@ -351,6 +391,10 @@ function renderStudentDashboard() {
   requestForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     const payload = Object.fromEntries(new FormData(requestForm));
+    if (!timeRangeInfo(payload.lab_start_time, payload.lab_end_time).valid) {
+      alert("실험 종료 시간은 시작 시간보다 늦게 선택하세요.");
+      return;
+    }
     const url = state.editingRequestId ? `/api/requests/${state.editingRequestId}` : "/api/requests";
     const method = state.editingRequestId ? "PUT" : "POST";
     try {
@@ -752,7 +796,6 @@ function reagentCardHtml(item, isTeacher) {
         <p>함께 보관하면 위험한 물질: ${info.incompatible}</p>
         <p>폐기 방법: ${info.disposal}</p>
         <p>사용기간 판단: ${period.detail}</p>
-        <p>AI 요약: ${info.aiSummary}</p>
       </div>
       ${isTeacher ? `<div class="button-row"><button data-edit="${item.id}" type="button">수정</button><button class="danger" data-delete="${item.id}" type="button">삭제</button></div>` : ""}
     </article>
@@ -824,6 +867,10 @@ function renderRequestList(isTeacher) {
 function requestCardHtml(item, isTeacher) {
   const analysis = analyzeExperimentPlan(item.reagents, item.safety_plan);
   const isNew = isTeacher && item.status === "대기";
+  const timeInfo = timeRangeInfo(item.lab_start_time || item.lab_time, item.lab_end_time);
+  const timeLabel = timeInfo.valid
+    ? `${timeInfo.label} (${timeInfo.duration})`
+    : item.lab_start_time || item.lab_time || "시간 미입력";
   const studentStatusMessage = item.status === "승인"
     ? "선생님이 이 신청서를 승인했습니다."
     : item.status === "반려"
@@ -834,7 +881,7 @@ function requestCardHtml(item, isTeacher) {
       <div class="card-head">
         <div>
           <h3>${item.experiment_title} ${isNew ? `<span class="new-label">새 신청</span>` : ""}</h3>
-          <p class="muted">${item.student_name} (${item.student_id}) · ${item.lab_date} ${item.lab_time}</p>
+          <p class="muted">${item.student_name} (${item.student_id}) · ${item.lab_date} · ${timeLabel}</p>
         </div>
         <span class="status-badge" data-status="${item.status}">${item.status}</span>
       </div>
@@ -861,7 +908,8 @@ function startRequestEdit(id) {
   state.editingRequestId = id;
   const fieldMap = {
     lab_date: item.lab_date,
-    lab_time: item.lab_time,
+    lab_start_time: item.lab_start_time || item.lab_time,
+    lab_end_time: item.lab_end_time,
     experiment_title: item.experiment_title,
     purpose: item.purpose,
     reagents: item.reagents,
@@ -870,6 +918,7 @@ function startRequestEdit(id) {
   Object.entries(fieldMap).forEach(([name, value]) => {
     form.elements[name].value = value || "";
   });
+  form.dispatchEvent(new Event("input", { bubbles: true }));
   document.querySelector("#saveRequestButton").textContent = "신청서 수정 완료";
   document.querySelector("#cancelRequestEdit").hidden = false;
   form.scrollIntoView({ behavior: "smooth", block: "start" });

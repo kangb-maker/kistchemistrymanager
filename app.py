@@ -15,6 +15,8 @@ ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin1234")
 TEMP_STUDENT_USERNAME = os.environ.get("TEMP_STUDENT_USERNAME", "student01")
 TEMP_STUDENT_PASSWORD = os.environ.get("TEMP_STUDENT_PASSWORD", "student1234")
+TEMP_STUDENT_2_USERNAME = os.environ.get("TEMP_STUDENT_2_USERNAME", "student02")
+TEMP_STUDENT_2_PASSWORD = os.environ.get("TEMP_STUDENT_2_PASSWORD", "student12345")
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-before-deploy")
@@ -40,6 +42,8 @@ REQUEST_FIELDS = [
     "student_id",
     "lab_date",
     "lab_time",
+    "lab_start_time",
+    "lab_end_time",
     "experiment_title",
     "purpose",
     "reagents",
@@ -117,23 +121,43 @@ def init_db() -> None:
                 ),
             )
 
-        temp_student = conn.execute(
-            "SELECT id FROM users WHERE username = ?",
-            (TEMP_STUDENT_USERNAME,),
-        ).fetchone()
-        if temp_student is None:
-            conn.execute(
-                """
-                INSERT INTO users
-                    (username, password_hash, name, student_id, role, status)
-                VALUES (?, ?, '임시 학생', ?, 'student', 'approved')
-                """,
-                (
-                    TEMP_STUDENT_USERNAME,
-                    generate_password_hash(TEMP_STUDENT_PASSWORD),
-                    TEMP_STUDENT_USERNAME,
-                ),
-            )
+        temporary_students = [
+            (TEMP_STUDENT_USERNAME, TEMP_STUDENT_PASSWORD, "임시 학생 1"),
+            (TEMP_STUDENT_2_USERNAME, TEMP_STUDENT_2_PASSWORD, "임시 학생 2"),
+        ]
+        for username, password, name in temporary_students:
+            temp_student = conn.execute(
+                "SELECT id FROM users WHERE username = ?",
+                (username,),
+            ).fetchone()
+            password_hash = generate_password_hash(password)
+            if temp_student is None:
+                conn.execute(
+                    """
+                    INSERT INTO users
+                        (username, password_hash, name, student_id, role, status)
+                    VALUES (?, ?, ?, ?, 'student', 'approved')
+                    """,
+                    (
+                        username,
+                        password_hash,
+                        name,
+                        username,
+                    ),
+                )
+            else:
+                conn.execute(
+                    """
+                    UPDATE users
+                    SET password_hash = ?,
+                        name = ?,
+                        student_id = ?,
+                        role = 'student',
+                        status = 'approved'
+                    WHERE username = ?
+                    """,
+                    (password_hash, name, username, username),
+                )
         ensure_column(conn, "reagents", "english_name", "TEXT DEFAULT ''")
         ensure_column(conn, "reagents", "chemical_code", "TEXT DEFAULT ''")
         ensure_column(conn, "reagents", "hazard_level", "TEXT DEFAULT ''")
@@ -150,6 +174,8 @@ def init_db() -> None:
                 student_id TEXT NOT NULL,
                 lab_date TEXT NOT NULL,
                 lab_time TEXT NOT NULL,
+                lab_start_time TEXT DEFAULT '',
+                lab_end_time TEXT DEFAULT '',
                 experiment_title TEXT NOT NULL,
                 purpose TEXT NOT NULL,
                 reagents TEXT NOT NULL,
@@ -161,6 +187,17 @@ def init_db() -> None:
         )
         ensure_column(conn, "lab_requests", "owner_token", "TEXT DEFAULT ''")
         ensure_column(conn, "lab_requests", "user_id", "INTEGER DEFAULT NULL")
+        ensure_column(conn, "lab_requests", "lab_start_time", "TEXT DEFAULT ''")
+        ensure_column(conn, "lab_requests", "lab_end_time", "TEXT DEFAULT ''")
+        conn.execute(
+            """
+            UPDATE lab_requests
+            SET lab_start_time = lab_time
+            WHERE (lab_start_time IS NULL OR lab_start_time = '')
+              AND lab_time IS NOT NULL
+              AND lab_time != ''
+            """
+        )
 
         count = conn.execute("SELECT COUNT(*) FROM reagents").fetchone()[0]
         if count == 0:
@@ -571,12 +608,19 @@ def create_request():
 
     data = request.get_json(silent=True) or {}
     student = session.get("student") or {}
+    start_time = data.get("lab_start_time", "").strip()
+    end_time = data.get("lab_end_time", "").strip()
+    if not valid_time_range(start_time, end_time):
+        return jsonify({"message": "실험 종료 시간은 시작 시간보다 늦어야 합니다."}), 400
+
     values = {
         "user_id": session["user_id"],
         "student_name": student.get("name", "").strip(),
         "student_id": student.get("student_id", "").strip(),
         "lab_date": data.get("lab_date", "").strip(),
-        "lab_time": data.get("lab_time", "").strip(),
+        "lab_time": start_time,
+        "lab_start_time": start_time,
+        "lab_end_time": end_time,
         "experiment_title": data.get("experiment_title", "").strip(),
         "purpose": data.get("purpose", "").strip(),
         "reagents": data.get("reagents", "").strip(),
@@ -590,9 +634,9 @@ def create_request():
         cursor = conn.execute(
             """
             INSERT INTO lab_requests
-                (user_id, student_name, student_id, lab_date, lab_time, experiment_title, purpose, reagents, safety_plan)
+                (user_id, student_name, student_id, lab_date, lab_time, lab_start_time, lab_end_time, experiment_title, purpose, reagents, safety_plan)
             VALUES
-                (:user_id, :student_name, :student_id, :lab_date, :lab_time, :experiment_title, :purpose, :reagents, :safety_plan)
+                (:user_id, :student_name, :student_id, :lab_date, :lab_time, :lab_start_time, :lab_end_time, :experiment_title, :purpose, :reagents, :safety_plan)
             """,
             values,
         )
@@ -611,13 +655,20 @@ def update_request(request_id: int):
 
     data = request.get_json(silent=True) or {}
     student = session.get("student") or {}
+    start_time = data.get("lab_start_time", "").strip()
+    end_time = data.get("lab_end_time", "").strip()
+    if not valid_time_range(start_time, end_time):
+        return jsonify({"message": "실험 종료 시간은 시작 시간보다 늦어야 합니다."}), 400
+
     values = {
         "id": request_id,
         "user_id": session["user_id"],
         "student_name": student.get("name", "").strip(),
         "student_id": student.get("student_id", "").strip(),
         "lab_date": data.get("lab_date", "").strip(),
-        "lab_time": data.get("lab_time", "").strip(),
+        "lab_time": start_time,
+        "lab_start_time": start_time,
+        "lab_end_time": end_time,
         "experiment_title": data.get("experiment_title", "").strip(),
         "purpose": data.get("purpose", "").strip(),
         "reagents": data.get("reagents", "").strip(),
@@ -634,6 +685,8 @@ def update_request(request_id: int):
                 student_id = :student_id,
                 lab_date = :lab_date,
                 lab_time = :lab_time,
+                lab_start_time = :lab_start_time,
+                lab_end_time = :lab_end_time,
                 experiment_title = :experiment_title,
                 purpose = :purpose,
                 reagents = :reagents,
@@ -651,6 +704,20 @@ def update_request(request_id: int):
         ).fetchone()
 
     return jsonify(row_dict(row, REQUEST_FIELDS))
+
+
+def valid_time_range(start_time: str, end_time: str) -> bool:
+    try:
+        start_hour, start_minute = (int(value) for value in start_time.split(":"))
+        end_hour, end_minute = (int(value) for value in end_time.split(":"))
+    except (TypeError, ValueError):
+        return False
+
+    if not (0 <= start_hour <= 23 and 0 <= end_hour <= 23):
+        return False
+    if not (0 <= start_minute <= 59 and 0 <= end_minute <= 59):
+        return False
+    return end_hour * 60 + end_minute > start_hour * 60 + start_minute
 
 
 @app.patch("/api/requests/<int:request_id>")

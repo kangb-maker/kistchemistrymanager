@@ -17,3 +17,7 @@ services:
         value: student01
       - key: TEMP_STUDENT_PASSWORD
         value: student1234
+      - key: TEMP_STUDENT_2_USERNAME
+        value: student02
+      - key: TEMP_STUDENT_2_PASSWORD
+        value: student12345

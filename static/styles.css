@@ -238,6 +238,21 @@ h3 span {
   color: var(--danger);
 }
 
+.duration-preview {
+  margin: -4px 0 2px;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #f1f5f9;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.duration-preview[data-valid="true"] {
+  background: #ecfdf5;
+  color: var(--good);
+}
+
 .role-grid,
 .form-grid,
 .dashboard-grid,
