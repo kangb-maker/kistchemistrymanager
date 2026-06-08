@@ -209,6 +209,16 @@ h3 span {
   line-height: 1.55;
 }
 
+.privacy-note,
+.student-identity {
+  border-left: 4px solid #0f766e;
+  margin: 16px 0 0;
+  padding: 10px 12px;
+  background: #f0fdfa;
+  color: #115e59;
+  line-height: 1.55;
+}
+
 .role-grid,
 .form-grid,
 .dashboard-grid,

@@ -140,6 +140,7 @@ def init_db() -> None:
             """
         )
         ensure_column(conn, "lab_requests", "owner_token", "TEXT DEFAULT ''")
+        ensure_column(conn, "lab_requests", "user_id", "INTEGER DEFAULT NULL")
 
         count = conn.execute("SELECT COUNT(*) FROM reagents").fetchone()[0]
         if count == 0:
@@ -274,8 +275,8 @@ def account_login():
         return jsonify({"message": "가입 승인 대기 중입니다."}), 403
     if user["status"] == "rejected":
         return jsonify({"message": "가입이 승인되지 않은 계정입니다."}), 403
-    if user["role"] not in {"teacher", "admin"}:
-        return jsonify({"message": "선생님 계정만 로그인할 수 있습니다."}), 403
+    if user["role"] not in {"student", "teacher", "admin"}:
+        return jsonify({"message": "사용할 수 없는 계정입니다."}), 403
 
     session.clear()
     session["user_id"] = user["id"]
@@ -313,12 +314,58 @@ def list_users():
             f"""
             SELECT {fields}
             FROM users
-            WHERE role IN ('teacher', 'admin')
-            ORDER BY status DESC, id DESC
+            WHERE role IN ('student', 'teacher', 'admin')
+            ORDER BY role, status DESC, id DESC
             """
         ).fetchall()
 
     return jsonify([row_dict(row, USER_FIELDS) for row in rows])
+
+
+@app.post("/api/users/students")
+def create_student_user():
+    if role() != "admin":
+        return jsonify({"message": "최고 관리자 권한이 필요합니다."}), 403
+
+    data = request.get_json(silent=True) or {}
+    name = data.get("name", "").strip()
+    student_id = data.get("student_id", "").strip()
+    password = data.get("password", "")
+
+    if not name or not student_id or not password:
+        return jsonify({"message": "이름, 학번, 초기 비밀번호는 필수입니다."}), 400
+    if len(password) < 8:
+        return jsonify({"message": "초기 비밀번호는 8자 이상이어야 합니다."}), 400
+    if len(name) > 30 or len(student_id) > 30:
+        return jsonify({"message": "이름 또는 학번이 너무 깁니다."}), 400
+
+    with get_db() as conn:
+        duplicate = conn.execute(
+            "SELECT id FROM users WHERE username = ? OR student_id = ?",
+            (student_id, student_id),
+        ).fetchone()
+        if duplicate:
+            return jsonify({"message": "이미 등록된 학번입니다."}), 409
+
+        cursor = conn.execute(
+            """
+            INSERT INTO users
+                (username, password_hash, name, student_id, role, status)
+            VALUES (?, ?, ?, ?, 'student', 'approved')
+            """,
+            (
+                student_id,
+                generate_password_hash(password),
+                name,
+                student_id,
+            ),
+        )
+        row = conn.execute(
+            f"SELECT {', '.join(USER_FIELDS)} FROM users WHERE id = ?",
+            (cursor.lastrowid,),
+        ).fetchone()
+
+    return jsonify(row_dict(row, USER_FIELDS)), 201
 
 
 @app.patch("/api/users/<int:user_id>")
@@ -482,15 +529,14 @@ def delete_reagent(reagent_id: int):
 @app.get("/api/requests")
 def list_requests():
     fields = ", ".join(REQUEST_FIELDS)
-    params: tuple[str, ...] = ()
+    params: tuple[int, ...] = ()
     where = ""
 
-    if role() not in {"teacher", "admin"}:
-        owner_token = request.args.get("owner_token", "").strip()
-        if not owner_token:
-            return jsonify([])
-        where = "WHERE owner_token = ?"
-        params = (owner_token,)
+    if role() == "student":
+        where = "WHERE user_id = ?"
+        params = (session["user_id"],)
+    elif role() not in {"teacher", "admin"}:
+        return jsonify({"message": "로그인이 필요합니다."}), 401
 
     with get_db() as conn:
         rows = conn.execute(f"SELECT {fields} FROM lab_requests {where} ORDER BY id DESC", params).fetchall()
@@ -500,17 +546,21 @@ def list_requests():
 
 @app.post("/api/requests")
 def create_request():
+    if role() != "student":
+        return jsonify({"message": "학생 로그인이 필요합니다."}), 403
+
     data = request.get_json(silent=True) or {}
+    student = session.get("student") or {}
     values = {
-        "student_name": data.get("student_name", "").strip(),
-        "student_id": data.get("student_id", "").strip(),
+        "user_id": session["user_id"],
+        "student_name": student.get("name", "").strip(),
+        "student_id": student.get("student_id", "").strip(),
         "lab_date": data.get("lab_date", "").strip(),
         "lab_time": data.get("lab_time", "").strip(),
         "experiment_title": data.get("experiment_title", "").strip(),
         "purpose": data.get("purpose", "").strip(),
         "reagents": data.get("reagents", "").strip(),
         "safety_plan": data.get("safety_plan", "").strip(),
-        "owner_token": data.get("owner_token", "").strip(),
     }
 
     if any(not value for value in values.values()):
@@ -520,9 +570,9 @@ def create_request():
         cursor = conn.execute(
             """
             INSERT INTO lab_requests
-                (student_name, student_id, lab_date, lab_time, experiment_title, purpose, reagents, safety_plan, owner_token)
+                (user_id, student_name, student_id, lab_date, lab_time, experiment_title, purpose, reagents, safety_plan)
             VALUES
-                (:student_name, :student_id, :lab_date, :lab_time, :experiment_title, :purpose, :reagents, :safety_plan, :owner_token)
+                (:user_id, :student_name, :student_id, :lab_date, :lab_time, :experiment_title, :purpose, :reagents, :safety_plan)
             """,
             values,
         )
@@ -536,22 +586,22 @@ def create_request():
 
 @app.put("/api/requests/<int:request_id>")
 def update_request(request_id: int):
-    data = request.get_json(silent=True) or {}
-    owner_token = data.get("owner_token", "").strip()
-    if not owner_token:
-        return jsonify({"message": "신청서 수정 권한을 확인할 수 없습니다."}), 403
+    if role() != "student":
+        return jsonify({"message": "학생 로그인이 필요합니다."}), 403
 
+    data = request.get_json(silent=True) or {}
+    student = session.get("student") or {}
     values = {
         "id": request_id,
-        "student_name": data.get("student_name", "").strip(),
-        "student_id": data.get("student_id", "").strip(),
+        "user_id": session["user_id"],
+        "student_name": student.get("name", "").strip(),
+        "student_id": student.get("student_id", "").strip(),
         "lab_date": data.get("lab_date", "").strip(),
         "lab_time": data.get("lab_time", "").strip(),
         "experiment_title": data.get("experiment_title", "").strip(),
         "purpose": data.get("purpose", "").strip(),
         "reagents": data.get("reagents", "").strip(),
         "safety_plan": data.get("safety_plan", "").strip(),
-        "owner_token": owner_token,
     }
     if any(not value for key, value in values.items() if key != "id"):
         return jsonify({"message": "모든 신청 항목을 작성해야 합니다."}), 400
@@ -569,7 +619,7 @@ def update_request(request_id: int):
                 reagents = :reagents,
                 safety_plan = :safety_plan,
                 status = '대기'
-            WHERE id = :id AND owner_token = :owner_token
+            WHERE id = :id AND user_id = :user_id
             """,
             values,
         )

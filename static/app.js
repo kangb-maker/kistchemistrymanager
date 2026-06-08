@@ -23,21 +23,10 @@ const state = {
   editingId: null,
   editingRequestId: null,
   teacherSection: null,
-  publicStudentMode: false,
   reagentPage: 1,
 };
 
 const REAGENTS_PER_PAGE = 4;
-
-const requestOwnerToken = getRequestOwnerToken();
-
-function getRequestOwnerToken() {
-  const saved = localStorage.getItem("science-lab-request-owner");
-  if (saved) return saved;
-  const token = crypto.randomUUID();
-  localStorage.setItem("science-lab-request-owner", token);
-  return token;
-}
 
 async function requestJson(url, options = {}) {
   const response = await fetch(url, {
@@ -199,7 +188,7 @@ async function loadData() {
   const privileged = session.role === "teacher" || session.role === "admin";
   const [reagents, requests, users] = await Promise.all([
     requestJson(`/api/reagents${state.query ? `?q=${encodeURIComponent(state.query)}` : ""}`),
-    requestJson(privileged ? "/api/requests" : `/api/requests?owner_token=${encodeURIComponent(requestOwnerToken)}`),
+    session.role ? requestJson("/api/requests") : Promise.resolve([]),
     session.role === "admin" ? requestJson("/api/users") : Promise.resolve([]),
   ]);
   state.role = session.role;
@@ -237,12 +226,10 @@ function renderHome() {
   document.querySelector("#statPending").textContent = pendingCount();
 
   document.querySelector("#studentModeButton").addEventListener("click", () => {
-    state.publicStudentMode = true;
-    renderDashboard();
+    showLoginPanel("student");
   });
   document.querySelector("#teacherModeButton").addEventListener("click", () => {
-    document.querySelector("#loginPanel").hidden = false;
-    document.querySelector("#signupPanel").hidden = true;
+    showLoginPanel("teacher");
   });
 
   document.querySelector("#accountLoginForm").addEventListener("submit", async (event) => {
@@ -283,11 +270,24 @@ function renderHome() {
   });
 }
 
+function showLoginPanel(loginType) {
+  const isStudent = loginType === "student";
+  document.querySelector("#loginPanel").hidden = false;
+  document.querySelector("#signupPanel").hidden = true;
+  document.querySelector("#loginTitle").textContent = isStudent ? "학생 계정 로그인" : "선생님 계정 로그인";
+  document.querySelector("#loginHint").textContent = isStudent
+    ? "아이디는 학교에서 발급한 학번입니다."
+    : "가입 승인을 받은 선생님 계정으로 로그인하세요.";
+  document.querySelector("#showTeacherSignup").hidden = isStudent;
+  document.querySelector("#studentPrivacyNote").hidden = !isStudent;
+  document.querySelector("#accountLoginForm").username.focus();
+}
+
 function renderDashboard() {
   const template = document.querySelector("#dashboardTemplate");
   app.replaceChildren(template.content.cloneNode(true));
 
-  const isStudent = state.publicStudentMode;
+  const isStudent = state.role === "student";
   document.querySelector("#dashboardTitle").textContent = isStudent
     ? "학생 과학실 이용"
     : state.role === "admin"
@@ -300,7 +300,6 @@ function renderDashboard() {
     if (state.role) await requestJson("/api/logout", { method: "POST" });
     state.query = "";
     state.teacherSection = null;
-    state.publicStudentMode = false;
     state.editingRequestId = null;
     await refresh();
   });
@@ -317,10 +316,9 @@ function renderStudentDashboard() {
     <section class="panel" id="studentSearchPanel"></section>
     <section class="panel">
       <div class="panel-heading"><div><p class="eyebrow">Request</p><h2>과학실 사용 신청 및 계획서 제출</h2></div></div>
+      <p class="student-identity"><strong>${state.student.name}</strong> · 학번 ${state.student.student_id}</p>
       <p class="muted">실험일 기준 최소 3일 전부터 신청 가능합니다. 오늘 기준 신청 가능 시작일: ${getMinimumDate()}</p>
       <form id="requestForm" class="stack-form">
-        <label>이름<input name="student_name" placeholder="신청 학생 이름" required /></label>
-        <label>학번<input name="student_id" placeholder="예: 30201" required /></label>
         <label>실험 날짜<input name="lab_date" type="date" min="${getMinimumDate()}" required /></label>
         <label>실험 시간<input name="lab_time" type="time" required /></label>
         <label>실험 제목<input name="experiment_title" placeholder="예: 산염기 중화 반응" required /></label>
@@ -353,7 +351,6 @@ function renderStudentDashboard() {
   requestForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     const payload = Object.fromEntries(new FormData(requestForm));
-    payload.owner_token = requestOwnerToken;
     const url = state.editingRequestId ? `/api/requests/${state.editingRequestId}` : "/api/requests";
     const method = state.editingRequestId ? "PUT" : "POST";
     try {
@@ -532,11 +529,27 @@ function renderMemberManager(body) {
       <div>
         <p class="eyebrow">Members</p>
         <h2>회원 가입 승인·관리</h2>
-        <p class="muted">학생 계정은 선생님이 승인할 수 있고, 선생님 계정은 최고 관리자만 승인할 수 있습니다.</p>
+        <p class="muted">학생 계정은 관리자가 발급하고, 선생님 가입 신청은 최고 관리자가 승인합니다.</p>
       </div>
       <button class="secondary" id="backToTeacherMenu" type="button">선생님 메뉴로</button>
     </section>
     ${pending.length ? `<section class="notice-banner full-width"><strong>승인 대기 ${pending.length}명</strong><span>가입 정보를 확인한 뒤 승인 또는 반려하세요.</span></section>` : ""}
+    <section class="panel full-width">
+      <div class="panel-heading">
+        <div>
+          <p class="eyebrow">Student Account</p>
+          <h2>학생 계정 발급</h2>
+          <p class="muted">필요한 개인정보만 사용합니다. 학번이 로그인 아이디가 됩니다.</p>
+        </div>
+      </div>
+      <form id="studentAccountForm" class="form-grid three">
+        <label>이름<input name="name" maxlength="30" placeholder="학생 이름" required /></label>
+        <label>학번<input name="student_id" maxlength="30" placeholder="예: 30201" required /></label>
+        <label>초기 비밀번호<input name="password" minlength="8" type="password" placeholder="8자 이상" required /></label>
+        <button type="submit">학생 계정 발급</button>
+      </form>
+      <p class="privacy-note">저장 항목: 이름, 학번, 암호화된 비밀번호, 계정 상태. 이메일·전화번호·생년월일은 수집하지 않습니다.</p>
+    </section>
     <section class="member-grid">
       ${memberGroupHtml("승인 대기", pending, "pending")}
       ${memberGroupHtml("승인된 회원", approved, "approved")}
@@ -547,6 +560,21 @@ function renderMemberManager(body) {
   document.querySelector("#backToTeacherMenu").addEventListener("click", async () => {
     state.teacherSection = null;
     await refresh();
+  });
+
+  document.querySelector("#studentAccountForm").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    try {
+      const result = await requestJson("/api/users/students", {
+        method: "POST",
+        body: JSON.stringify(Object.fromEntries(new FormData(event.currentTarget))),
+      });
+      alert(`${result.name} 학생 계정이 발급되었습니다. 로그인 아이디는 ${result.student_id}입니다.`);
+      event.currentTarget.reset();
+      await refresh();
+    } catch (error) {
+      alert(error.message);
+    }
   });
 
   body.querySelectorAll("[data-user-status]").forEach((button) => {
@@ -827,8 +855,6 @@ function startRequestEdit(id) {
 
   state.editingRequestId = id;
   const fieldMap = {
-    student_name: item.student_name,
-    student_id: item.student_id,
     lab_date: item.lab_date,
     lab_time: item.lab_time,
     experiment_title: item.experiment_title,
@@ -854,7 +880,7 @@ function requestActionsHtml(item) {
 
 async function refresh() {
   await loadData();
-  if (!state.role && !state.publicStudentMode) renderHome();
+  if (!state.role) renderHome();
   else renderDashboard();
 }
 
