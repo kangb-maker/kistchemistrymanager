@@ -744,9 +744,8 @@ function reagentCardHtml(item, isTeacher) {
         <div><small>AI 권장 사용기한</small><strong>${dueLabel}<br>${usePeriodLabel}</strong></div>
         <div><small>점검 상태</small><strong>${period.status}</strong></div>
       </div>
-      <div class="mini-grid">
+      <div class="mini-grid two">
         <div><small>위험성</small><strong>${item.risk_notes || info.risk}</strong></div>
-        <div><small>권장 위치</small><strong>${info.storage}</strong></div>
         <div><small>권장 보호구</small><strong>${info.protectiveGear}</strong></div>
       </div>
       <div class="analysis-box">
@@ -825,6 +824,11 @@ function renderRequestList(isTeacher) {
 function requestCardHtml(item, isTeacher) {
   const analysis = analyzeExperimentPlan(item.reagents, item.safety_plan);
   const isNew = isTeacher && item.status === "대기";
+  const studentStatusMessage = item.status === "승인"
+    ? "선생님이 이 신청서를 승인했습니다."
+    : item.status === "반려"
+      ? "선생님이 이 신청서를 반려했습니다. 내용을 확인한 뒤 수정할 수 있습니다."
+      : "선생님의 확인을 기다리고 있습니다.";
   return `
     <article class="request-card ${isNew ? "new-request" : ""}">
       <div class="card-head">
@@ -834,6 +838,7 @@ function requestCardHtml(item, isTeacher) {
         </div>
         <span class="status-badge" data-status="${item.status}">${item.status}</span>
       </div>
+      ${isTeacher ? "" : `<p class="student-request-status" data-status="${item.status}">${studentStatusMessage}</p>`}
       <div class="mini-grid two">
         <div><small>사용 예정 시약</small><strong>${item.reagents}</strong></div>
         <div><small>AI 실험 위험도</small><strong>${analysis.level}</strong></div>

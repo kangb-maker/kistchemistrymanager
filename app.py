@@ -13,6 +13,8 @@ DB_PATH = BASE_DIR / "lab.db"
 TEACHER_SIGNUP_KEY = os.environ.get("TEACHER_SIGNUP_KEY", "teacher-invite-2026")
 ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin1234")
+TEMP_STUDENT_USERNAME = os.environ.get("TEMP_STUDENT_USERNAME", "student01")
+TEMP_STUDENT_PASSWORD = os.environ.get("TEMP_STUDENT_PASSWORD", "student1234")
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-before-deploy")
@@ -112,6 +114,24 @@ def init_db() -> None:
                     ADMIN_USERNAME,
                     generate_password_hash(ADMIN_PASSWORD),
                     "최고 관리자",
+                ),
+            )
+
+        temp_student = conn.execute(
+            "SELECT id FROM users WHERE username = ?",
+            (TEMP_STUDENT_USERNAME,),
+        ).fetchone()
+        if temp_student is None:
+            conn.execute(
+                """
+                INSERT INTO users
+                    (username, password_hash, name, student_id, role, status)
+                VALUES (?, ?, '임시 학생', ?, 'student', 'approved')
+                """,
+                (
+                    TEMP_STUDENT_USERNAME,
+                    generate_password_hash(TEMP_STUDENT_PASSWORD),
+                    TEMP_STUDENT_USERNAME,
                 ),
             )
         ensure_column(conn, "reagents", "english_name", "TEXT DEFAULT ''")

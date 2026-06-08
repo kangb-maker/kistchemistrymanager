@@ -219,6 +219,25 @@ h3 span {
   line-height: 1.55;
 }
 
+.student-request-status {
+  margin: 14px 0 0;
+  border-radius: 8px;
+  padding: 11px 13px;
+  background: #fef3c7;
+  color: #92400e;
+  font-weight: 800;
+}
+
+.student-request-status[data-status="승인"] {
+  background: #d1fae5;
+  color: var(--good);
+}
+
+.student-request-status[data-status="반려"] {
+  background: #ffe4e6;
+  color: var(--danger);
+}
+
 .role-grid,
 .form-grid,
 .dashboard-grid,

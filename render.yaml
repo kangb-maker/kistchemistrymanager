@@ -13,3 +13,7 @@ services:
         value: admin
       - key: ADMIN_PASSWORD
         value: change-this-admin-password
+      - key: TEMP_STUDENT_USERNAME
+        value: student01
+      - key: TEMP_STUDENT_PASSWORD
+        value: student1234
